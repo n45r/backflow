@@ -75,7 +75,13 @@ def main(keep_voice=False):
     night = ROOT / "data" / "clips" / "32_cam5.mp4"
     scene_fix = OUT / "scene_fix.png"
     segs = [
-        mosaic(OUT / "f0.mp4", 5),
+        mosaic(OUT / "f0.mp4", 5, views=[
+            [(ROOT / "data/clips/20_cam1.mp4", 180, "Pond"),
+             (ROOT / "data/raw/video/161006A/cam3/c3_cam3_instar_161006_143254_144255.avi", 330, "Channel"),
+             (ROOT / "data/clips/20_cam5.mp4", 200, "Basement")],
+            [(ROOT / "data/clips/32_cam1.mp4", 240, "Pond"),
+             (ROOT / "data/raw/video/161006B/cam3/c3_cam3_instar_161006_211833_212838.avi", 120, "Channel"),
+             (ROOT / "data/clips/32_cam5.mp4", 250, "Basement")]]),
         still(card(OUT / "plan.png", OUT / "f0b.png", "Plus the site plan"), 3, OUT / "f0b.mp4"),
         clip(OUT / "orbit.mp4", 0, 6, 5, OUT / "f1a.mp4"),
         still(card(triptych([RUN_DIR / "round_00/real/32_cam5_t00000.jpg", RUN_DIR / "round_00/render_0/cam5_t00000.png",
