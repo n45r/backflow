@@ -1,4 +1,5 @@
 """Calls to Gemini 4 Argon: scene generation, scene patches and visual critique."""
+import fcntl
 import json
 import os
 import pathlib
@@ -17,21 +18,65 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 CONTRACTS = ROOT / "docs" / "CONTRACTS.md"
 
 
-def _key():
+KEY_NAMES = ("workshop", "default")
+MAX_CONCURRENT_PER_KEY = int(os.environ.get("ARGON_MAX_CONCURRENT", "3"))
+LOCK_DIR = ROOT / "runs" / ".argon_slots"
+CALL_LOG = ROOT / "runs" / "argon_calls.jsonl"
+
+
+def _keys():
+    keys = {}
     for line in pathlib.Path.home().joinpath("gemini-key.txt").read_text().splitlines():
-        if line.startswith("workshop="):
-            return line.split("=", 1)[1].strip()
-    raise RuntimeError("no workshop= line in ~/gemini-key.txt")
+        name, _, value = line.partition("=")
+        if name.strip() in KEY_NAMES and value.strip():
+            keys[name.strip()] = value.strip()
+    if not keys:
+        raise RuntimeError("no keys in ~/gemini-key.txt")
+    return keys
 
 
-_client = None
+_clients = {}
 
 
-def client():
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=_key())
-    return _client
+def client(name=None):
+    keys = _keys()
+    name = name or next(iter(keys))
+    if name not in _clients:
+        _clients[name] = genai.Client(api_key=keys[name], http_options=types.HttpOptions(timeout=600_000))
+    return _clients[name]
+
+
+class _Slot:
+    """Cross-process cap on concurrent calls per key, using file locks."""
+
+    def __init__(self):
+        self.fh = None
+        self.key = None
+
+    def __enter__(self):
+        LOCK_DIR.mkdir(parents=True, exist_ok=True)
+        names = list(_keys())
+        while True:
+            for i in range(MAX_CONCURRENT_PER_KEY):
+                for name in names:
+                    fh = open(LOCK_DIR / f"{name}.{i}", "w")
+                    try:
+                        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        self.fh, self.key = fh, name
+                        return self
+                    except BlockingIOError:
+                        fh.close()
+            time.sleep(0.5)
+
+    def __exit__(self, *exc):
+        fcntl.flock(self.fh, fcntl.LOCK_UN)
+        self.fh.close()
+
+
+def _log(entry):
+    CALL_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(CALL_LOG, "a") as fh:
+        fh.write(json.dumps(entry) + "\n")
 
 
 def _file_part(path):
@@ -40,20 +85,30 @@ def _file_part(path):
     return types.Part.from_bytes(data=path.read_bytes(), mime_type=mime)
 
 
-def ask(parts, thinking="high", max_output_tokens=65536, media_resolution=None):
-    """One call. Returns (text, usage dict, seconds)."""
-    start = time.time()
-    resp = client().models.generate_content(
-        model=MODEL,
-        contents=parts,
-        config=types.GenerateContentConfig(
-            max_output_tokens=max_output_tokens,
-            thinking_config=types.ThinkingConfig(thinking_level=thinking),
-            media_resolution=f"MEDIA_RESOLUTION_{media_resolution.upper()}" if media_resolution else None,
-        ),
+def ask(parts, thinking="high", max_output_tokens=65536, media_resolution=None, attempts=4):
+    """One call with a concurrency slot, retries and a log line. Returns (text, usage dict, seconds)."""
+    config = types.GenerateContentConfig(
+        max_output_tokens=max_output_tokens,
+        thinking_config=types.ThinkingConfig(thinking_level=thinking),
+        media_resolution=f"MEDIA_RESOLUTION_{media_resolution.upper()}" if media_resolution else None,
     )
-    usage = resp.usage_metadata.model_dump() if resp.usage_metadata else {}
-    return resp.text or "", usage, round(time.time() - start, 1)
+    start = time.time()
+    last = None
+    for attempt in range(attempts):
+        with _Slot() as slot:
+            t0 = time.time()
+            try:
+                resp = client(slot.key).models.generate_content(model=MODEL, contents=parts, config=config)
+                usage = resp.usage_metadata.model_dump() if resp.usage_metadata else {}
+                _log({"t": round(t0), "key": slot.key, "ok": True, "attempt": attempt, "wait_s": round(t0 - start, 1),
+                      "call_s": round(time.time() - t0, 1), "out_tokens": usage.get("candidates_token_count")})
+                return resp.text or "", usage, round(time.time() - start, 1)
+            except Exception as e:
+                last = e
+                _log({"t": round(t0), "key": slot.key, "ok": False, "attempt": attempt,
+                      "call_s": round(time.time() - t0, 1), "error": f"{type(e).__name__}: {str(e)[:200]}"})
+        time.sleep(min(60, 4 * 2 ** attempt))
+    raise last
 
 
 def extract_code(text):
