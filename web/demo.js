@@ -430,11 +430,17 @@ function drawChart(animateMeasured) {
     const d = ys.map((v, i) => `${i ? 'L' : 'M'}${X(S.t[i]).toFixed(1)},${Y(v).toFixed(1)}`).join('');
     g += `<path class="ser ${cls}${cls === 'measured' && animateMeasured ? ' draw' : ''}" d="${d}"/>`;
     const peak = Math.max(...ys);
-    labels.push({ name, cls, y: Y(ys[ys.length - 1]), peak });
+    const ip = ys.indexOf(peak);
+    labels.push({ name, cls, x: X(S.t[ip]) + 8, y: Y(peak) - 8 });
   }
   labels.sort((a, b) => a.y - b.y);
-  for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 20);
-  for (const l of labels) g += `<text class="dl" x="${W - m.r + 8}" y="${l.y + 5}">${l.name}</text>`;
+  for (let i = 1; i < labels.length; i++) {
+    if (Math.abs(labels[i].x - labels[i - 1].x) < 90) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 20);
+  }
+  for (const l of labels) {
+    const x = Math.min(l.x, W - m.r - 70), y = Math.max(m.t + 12, l.y);
+    g += `<text class="dl ${l.cls}" x="${x}" y="${y}">${l.name}</text>`;
+  }
   g += `<line class="cursor" id="cursor" y1="${m.t}" y2="${H - m.b}" x1="${X(0)}" x2="${X(0)}"/>`;
   g += `<rect id="hit" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>`;
   svg.innerHTML = g;
