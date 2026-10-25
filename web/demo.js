@@ -84,11 +84,12 @@ function currentView() {
       scene: state.pred === 'blind' ? h.blind_scene_url : h.informed_scene_url,
       depths: state.pred === 'blind' ? h.blind_depths_url : h.informed_depths_url,
       clips: h.clips,
+      patch: (d.frozen && d.frozen.patch) || {},
     };
   }
   const r = d.rounds[state.roundIdx];
   if (!r) return null;
-  return { event: r.event, scene: r.scene_url, depths: r.depths_url, clips: r.clips };
+  return { event: r.event, scene: r.scene_url, depths: r.depths_url, clips: r.clips, patch: r.patch || {} };
 }
 
 async function applyView() {
@@ -111,6 +112,7 @@ async function applyView() {
     ]);
     if (token !== viewToken) return;
     state.sceneUrl = v.scene;
+    if (typeof harness.applyPatch === 'function') harness.applyPatch(v.patch || {});
     harness.setCamera(state.cam);
     harness.loadDepths(depths);
     state.depths = depths;

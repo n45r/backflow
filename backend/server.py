@@ -74,7 +74,14 @@ def loop_summary(name: str):
         patch = rec.get("scene_patch") or {}
         rounds.append({
             "round": rec.get("round"),
+            "kind": rec.get("kind") or "critique",
             "event": rec.get("event"),
+            "patch": rec.get("patch") or {},
+            "winner": rec.get("winner"),
+            "candidates": rec.get("candidates") or {},
+            "scene_changed": bool(rec.get("scene_changed")),
+            "direction": crit.get("direction"),
+            "remaining_error": crit.get("remaining_error") or "",
             "scene_url": _url(rec.get("scene")),
             "depths_url": _url(rec.get("depths")),
             "contact_url": _url(rec.get("contact")),
@@ -108,7 +115,7 @@ def loop_summary(name: str):
         "name": name,
         "fixture": name.startswith("demo_fixture") or bool((frozen or {}).get("fixture")),
         "site": site,
-        "frozen": {"sha": frozen.get("sha"), "params": frozen.get("params"), "scene_url": _url(frozen.get("scene"))} if frozen else None,
+        "frozen": {"sha": frozen.get("sha"), "params": frozen.get("params"), "scene_url": _url(frozen.get("scene")), "patch": frozen.get("patch") or {}} if frozen else None,
         "rounds": rounds,
         "holdout": holdout,
     }
