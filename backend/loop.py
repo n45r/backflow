@@ -38,7 +38,13 @@ def clamp(knobs):
             if value in allowed:
                 out[name] = value
         else:
-            out[name] = min(max(float(value), allowed[0]), allowed[1])
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                continue
+            if v != v:
+                continue
+            out[name] = min(max(v, allowed[0]), allowed[1])
     return out
 
 

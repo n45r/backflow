@@ -245,3 +245,46 @@ def generate_scene(plan_pdf, frames, site, out_path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(code)
     return {"path": str(out_path), "usage": usage, "seconds": secs, "chars": len(code)}
+
+
+JUDGE_BRIEF = """You are judging flood simulations of the FloodX test site against real camera footage.
+
+The attached sheet has one row per moment of the same flood. The first column is the real camera frame. The other columns are 3D renders of candidate simulations (labelled A, B, C...) from the virtual camera of the same name at the same moment. Water in each render is placed by the hydraulic simulation; you cannot see its numbers.
+
+For each row, say which candidate best matches the real frame for the flood: whether the basement floor is wet, how far the wet area has spread, and whether water is coming up through the floor drain. In night infrared frames, wet concrete is darker and reflective. Ignore differences in colour, texture and lighting between a render and a photo; judge only the water. If two candidates look the same in a row, say "tie".
+
+Then pick the candidate that matches best overall, and say what the best one still gets wrong (too early, too late, too much water, too little).
+
+Reply with JSON only:
+{"rows": [{"label": "...", "best": "A|B|C|tie", "evidence": "..."}],
+ "winner": "A|B|C", "remaining_error": "...", "direction": "less_water|more_water|earlier|later|ok",
+ "confidence": 0.0-1.0}"""
+
+
+def judge(sheet_path):
+    reply, usage, secs = ask([_file_part(sheet_path), types.Part.from_text(text=JUDGE_BRIEF)],
+                             thinking="high", max_output_tokens=16384, media_resolution="high")
+    m = re.search(r"\{.*\}", reply, re.S)
+    return {"result": json.loads(m.group(0)) if m else {"raw": reply}, "usage": usage, "seconds": secs}
+
+
+SCENE_FIX_BRIEF = """You are fixing a 3D scene of the FloodX test site so that its virtual camera matches a real camera.
+
+The attached sheet shows, per row, the real camera frame (left) and our render of the dry scene from the virtual camera of the same name (right). Below is the current scene description: cameras (position, lookAt, fov), named objects (position, rotation, scale) and the basement water anchors (outline, floor_y, slope, drain_xz). Coordinates are metres; y is up.
+
+Compare left and right: where is the real camera looking, what is in view (walls, drain, door, stairs), and how is the render different? Propose a small patch that moves the virtual camera and, if clearly needed, named objects or the basement drain position so the render matches the real view. Change only what the picture justifies. If the views already match, return an empty patch.
+
+Reply with JSON only:
+{"differences": ["..."],
+ "patch": {"cameras": {"cam5": {"position": [x, y, z], "lookAt": [x, y, z], "fov": 70}},
+           "objects": {"name": {"position": [x, y, z]}},
+           "water": {"basement": {"drain_xz": [x, z], "slope": 0.01}}},
+ "confidence": 0.0-1.0}"""
+
+
+def scene_fix(sheet_path, description):
+    text = SCENE_FIX_BRIEF + "\n\nCurrent scene description:\n" + json.dumps(description)[:60000]
+    reply, usage, secs = ask([_file_part(sheet_path), types.Part.from_text(text=text)],
+                             thinking="high", max_output_tokens=16384, media_resolution="high")
+    m = re.search(r"\{.*\}", reply, re.S)
+    return {"result": json.loads(m.group(0)) if m else {"raw": reply}, "usage": usage, "seconds": secs}
