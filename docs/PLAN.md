@@ -36,6 +36,14 @@ FloodX (Eawag, Switzerland, Oct 2016): 22 staged floods, 5 fixed cameras plus 1 
 11. **Managed Agents.** One autonomous sandbox worker per hypothesis. Each loops several times: edit allowed parameters, run SWMM, check conservation, the dry check and where the water goes, then revise. It returns its best candidate and a short report. Used in the recorded calibration run, not in the live 40-second round.
 12. **Baseline.** Argon extracts a landmark timeline from the real video once; a plain numeric optimiser tunes SWMM to it. Both are scored on the hidden gauges of the held-out event.
 
+## Blind guess, then learn
+1. Blind: Argon sees only the dry site (plans, photos, dry frames) and builds the scene and the model. That model predicts the held-out flood. It is locked.
+2. Learn: the loop calibrates on one real flood video.
+3. Informed: the calibrated model predicts the same held-out flood. It is locked.
+4. Reveal both against the hidden gauges. The gain from watching one flood is measured, not claimed.
+
+Gate A showed the untuned template floods the basement 2.5 to 3 times too deep and wets it on a dry event, so the blind guess has a real error to fix.
+
 ## Demo (3 minutes, presenter-driven)
 1. Real footage of a flood. The question.
 2. Recorded, labelled: worker hypotheses, a wrong mechanism rejected with video evidence, the scene changing round by round.

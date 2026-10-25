@@ -1,0 +1,41 @@
+[TITLE]
+Tiny gate-test model: 1 junction, 1 conduit, 1 outfall, constant 0.5 CMS inflow for 1 hour
+
+[OPTIONS]
+FLOW_UNITS           CMS
+INFILTRATION         HORTON
+FLOW_ROUTING         DYNWAVE
+START_DATE           01/01/2020
+START_TIME           00:00:00
+REPORT_START_DATE    01/01/2020
+REPORT_START_TIME    00:00:00
+END_DATE             01/01/2020
+END_TIME             01:00:00
+REPORT_STEP          00:01:00
+WET_STEP             00:01:00
+DRY_STEP             00:01:00
+ROUTING_STEP         0:00:05
+
+[JUNCTIONS]
+;;Name  Elev  MaxDepth  InitDepth  SurDepth  Aponded
+J1      10    3         0          0         0
+
+[OUTFALLS]
+;;Name  Elev  Type  Gated
+O1      9     FREE  NO
+
+[CONDUITS]
+;;Name  From  To  Length  Roughness  InOffset  OutOffset  InitFlow  MaxFlow
+C1      J1    O1  100     0.013      0         0          0         0
+
+[XSECTIONS]
+;;Link  Shape     Geom1  Geom2  Geom3  Geom4  Barrels
+C1      CIRCULAR  1      0      0      0      1
+
+[INFLOWS]
+;;Node  Constituent  TimeSeries  Type  Mfactor  Sfactor  Baseline
+J1      FLOW         ""          FLOW  1.0      1.0      0.5
+
+[REPORT]
+INPUT NO
+CONTROLS NO
