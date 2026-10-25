@@ -147,9 +147,9 @@ def end_card(out):
     from backend.contact import _font
     im = Image.new("RGB", (W, H), (11, 11, 12))
     d = ImageDraw.Draw(im)
-    for y, s, f, col in ((380, "Backflow", _font(96), (236, 236, 236)),
-                         (520, "Flood video in. A checked flood model out.", _font(44), (236, 236, 236)),
-                         (640, "Gemini 4 Argon  ·  Managed Agents  ·  github.com/n45r/backflow", _font(30), (130, 130, 135))):
+    for y, s, f, col in ((400, "Backflow", _font(96), (236, 236, 236)),
+                         (540, "Built with Gemini 4 Argon and Managed Agents", _font(40), (236, 236, 236)),
+                         (640, "github.com/n45r/backflow", _font(30), (130, 130, 135))):
         d.text(((W - d.textlength(s, font=f)) / 2, y), s, fill=col, font=f)
     im.save(out)
     return out
