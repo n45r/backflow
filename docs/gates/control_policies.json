@@ -1,0 +1,100 @@
+[
+ {
+  "policy": "always_less",
+  "picks": "BBBB",
+  "mae_mm": 4.0,
+  "peak_err_mm": -26.7,
+  "wet": false
+ },
+ {
+  "policy": "always_more",
+  "picks": "CCCC",
+  "mae_mm": 137.4,
+  "peak_err_mm": 228.4,
+  "wet": true
+ },
+ {
+  "policy": "never_move",
+  "picks": "AAAA",
+  "mae_mm": 33.5,
+  "peak_err_mm": 64.9,
+  "wet": true
+ },
+ {
+  "policy": "oracle_gauges_mean",
+  "picks": "BBBB",
+  "mae_mm": 4.0,
+  "peak_err_mm": -26.7,
+  "wet": false
+ },
+ {
+  "policy": "oracle_gauges_peak",
+  "picks": "BBAA",
+  "mae_mm": 4.0,
+  "peak_err_mm": -26.7,
+  "wet": false
+ },
+ {
+  "policy": "random_0",
+  "picks": "BBAB",
+  "mae_mm": 4.0,
+  "peak_err_mm": -26.7,
+  "wet": false
+ },
+ {
+  "policy": "random_1",
+  "picks": "ACAB",
+  "mae_mm": 32.9,
+  "peak_err_mm": 62.9,
+  "wet": true
+ },
+ {
+  "policy": "random_2",
+  "picks": "AAAB",
+  "mae_mm": 27.5,
+  "peak_err_mm": 51.2,
+  "wet": true
+ },
+ {
+  "policy": "random_3",
+  "picks": "ACCA",
+  "mae_mm": 65.6,
+  "peak_err_mm": 123.8,
+  "wet": true
+ },
+ {
+  "policy": "random_4",
+  "picks": "ABAC",
+  "mae_mm": 20.0,
+  "peak_err_mm": 32.8,
+  "wet": true
+ },
+ {
+  "policy": "random_5",
+  "picks": "CBCB",
+  "mae_mm": 7.1,
+  "peak_err_mm": -4.3,
+  "wet": true
+ },
+ {
+  "policy": "random_6",
+  "picks": "CABB",
+  "mae_mm": 13.9,
+  "peak_err_mm": 14.7,
+  "wet": true
+ },
+ {
+  "policy": "random_7",
+  "picks": "BABC",
+  "mae_mm": 9.3,
+  "peak_err_mm": 1.9,
+  "wet": true
+ },
+ {
+  "policy": "argon_video (calib_video)",
+  "picks": "BACB",
+  "mae_mm": 5.9,
+  "peak_err_mm": -5.1,
+  "wet": true
+ }
+]
