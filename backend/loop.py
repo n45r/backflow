@@ -14,7 +14,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from backend import argon, contact, data, sim
+from backend import argon, contact, data, progress, sim
 from backend.config import RUNS, SPLIT
 from backend.render import Renderer
 
@@ -128,6 +128,7 @@ class Loop:
         t0 = time.time()
         dry = {"t": [0], "depth_m": {}}
         scene_before = str(self.scene)
+        progress.report(self.dir, "render", "Checking Argon's 3D scene against the real dry camera frame", round=n)
         real = self.real_frames(out, [0])
         log = []
         sheet = None
@@ -203,19 +204,18 @@ class Loop:
         return out
 
     def numeric_candidates(self):
-        """A: current. B: less basement water. C: more. Each knob moves in the direction that has that effect."""
-        effects = json.loads((ROOT / "site" / "knob_effects.json").read_text())["less_water"] if (ROOT / "site" / "knob_effects.json").exists() else {}
-        cands = {"A": dict(self.params)}
-        less, more = dict(self.params), dict(self.params)
-        for k in numeric_knobs():
-            lo, hi = KNOBS[k]
-            v = self.params[k]
-            sign = effects.get(k, 1)
-            toward_hi = v + self.step * (hi - v)
-            toward_lo = v - self.step * (v - lo)
-            less[k], more[k] = (toward_hi, toward_lo) if sign > 0 else (toward_lo, toward_hi)
-        cands["B"], cands["C"] = less, more
-        return cands
+        """Coordinate search: each round moves one setting, cycling through them. A: current, B: that setting lower,
+        C: that setting higher. Moving one at a time lets the search go in any direction, not only along one line."""
+        knobs = numeric_knobs()
+        k = knobs[self.knob_turn % len(knobs)]
+        self.knob_turn += 1
+        lo, hi = KNOBS[k]
+        v, s = self.params[k], self.steps.setdefault(k, 0.4)
+        lower, higher = dict(self.params), dict(self.params)
+        lower[k] = v - s * (v - lo)
+        higher[k] = v + s * (hi - v)
+        self.current_knob = k
+        return {"A": dict(self.params), "B": lower, "C": higher}
 
     def judged_round(self, n, candidates, kind):
         out = self.dir / f"round_{n:02d}"
@@ -223,6 +223,9 @@ class Loop:
         t0 = time.time()
         depths, renders = {}, {}
         self.renderer.patch = self.patch
+        what = f"which way water enters the basement" if kind == "path" else f"setting {self.current_knob}"
+        progress.report(self.dir, "simulate", f"Round {n}: simulating 3 versions of the model ({what})", round=n,
+                        candidates=candidates)
         # PySWMM allows one simulation per process, so the candidates run in separate processes at once.
         with ProcessPoolExecutor(max_workers=len(candidates)) as ex:
             futs = {L: ex.submit(sim.run, self.site, p, self.event, f"loop_{self.dir.name}_r{n:02d}_{L}")
@@ -232,11 +235,15 @@ class Loop:
         if self.video:
             from backend import videojudge
             start, end = self.video_window()
+            progress.report(self.dir, "render", f"Round {n}: drawing each version in Argon's 3D scene, from the real camera's view", round=n)
             video, sheet = videojudge.build_video(self.renderer, self.scene_url, depths, self.event, CAM, start, end, out)
+            progress.report(self.dir, "upload", f"Round {n}: sending Argon a {round((end - start) / 60)}-minute time-lapse, real flood beside the 3 versions",
+                            round=n, video=video)
             t_sim = time.time()
             key = json.dumps({"event": self.event, "scene": file_sha(self.scene), "patch": self.patch, "step": videojudge.STEP_S,
                               "window": [start, end], "candidates": candidates}, sort_keys=True, default=str)
-            verdict = videojudge.judge(video, key)
+            verdict = videojudge.judge(video, key, on_stage=lambda s: progress.report(
+                self.dir, "watching", f"Round {n}: Argon is watching the video", round=n, video=video) if s == "watching" else None)
             res = verdict["result"]
             res["rows"] = [{"label": m.get("time"), "best": m.get("best"), "evidence": m.get("evidence")} for m in (res.get("moments") or [])]
         else:
@@ -250,8 +257,8 @@ class Loop:
         winner = res.get("winner") if res.get("winner") in candidates else "A"
         chosen = candidates[winner]
         changed = {k: v for k, v in chosen.items() if self.params.get(k) != v}
-        if kind == "numeric" and winner == "A":
-            self.step *= 0.5
+        if kind == "numeric" and winner == "A" and self.current_knob:
+            self.steps[self.current_knob] = self.steps.get(self.current_knob, 0.4) * 0.5
         self.params = dict(chosen)
         rows = [{"label": r.get("label"), "verdict": r.get("best"), "evidence": r.get("evidence")} for r in (res.get("rows") or [])]
         record = {"round": n, "kind": kind, "event": self.event, "scene": str(self.scene), "scene_sha": file_sha(self.scene),
@@ -264,6 +271,8 @@ class Loop:
                   "seconds": {"sim_render": round(t_sim - t0, 1), "judge": round(verdict["seconds"], 1),
                               "total": round(time.time() - t0, 1)}}
         (out / "round.json").write_text(json.dumps(record, indent=1, default=str))
+        progress.report(self.dir, "verdict", f"Round {n}: Argon picked {winner}. {res.get('remaining_error') or ''}".strip(),
+                        round=n, winner=winner, moments=rows, video=str(out / "judge.mp4") if self.video else None)
         self.history.append({"round": n, "winner": winner, "knobs": changed, "direction": res.get("direction")})
         return record
 
@@ -282,7 +291,7 @@ class Loop:
                 records.append(rec)
                 n += 1
                 same = same + 1 if rec["winner"] == "A" else 0
-                if same >= 2 or (same >= 1 and rec["critique"].get("direction") == "ok" and _ > 0):
+                if same >= len(numeric_knobs()):
                     break
         finally:
             self.renderer.close()
@@ -290,6 +299,7 @@ class Loop:
                   "params": self.params, "site": self.site, "event": self.event}
         frozen["sha"] = hashlib.sha256(json.dumps(frozen, sort_keys=True).encode()).hexdigest()[:12]
         (self.dir / "frozen.json").write_text(json.dumps(frozen, indent=1))
+        progress.report(self.dir, "done", f"Model frozen ({frozen['sha']}). Ready for the blind test.", sha=frozen["sha"], params=self.params)
         return records, frozen
 
 

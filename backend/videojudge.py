@@ -91,7 +91,7 @@ def _cache_path(key):
     return Path(__file__).resolve().parent.parent / "runs" / "argon_cache" / f"video_{hashlib.sha256(key.encode()).hexdigest()[:24]}.json"
 
 
-def judge(video, key=None):
+def judge(video, key=None, on_stage=None):
     """key: a description of what the video shows (candidates, scene, window). Used to record and replay answers
     without uploading, so the demo works offline."""
     import os
@@ -102,10 +102,14 @@ def judge(video, key=None):
             raise RuntimeError(f"no recorded answer for this video ({p.name}); run once with ARGON_CACHE=record")
         rec = json.loads(p.read_text())
         rec["replay"] = True
+        if on_stage:
+            on_stage("watching")
         return rec
     t0 = time.time()
     f = _upload(video)
     up = time.time() - t0
+    if on_stage:
+        on_stage("watching")
     reply, usage, secs = argon.ask([types.Part.from_uri(file_uri=f.uri, mime_type=f.mime_type),
                                     types.Part.from_text(text=BRIEF.format(step=STEP_S))],
                                    thinking="medium", max_output_tokens=65536)
