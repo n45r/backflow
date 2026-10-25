@@ -1,6 +1,6 @@
 # Backflow
 
-An agent watches real flood video, builds a 3D scene and a flood simulation of the site from one shared site description, fixes them in a render-watch-critique loop, then predicts a held-out flood that is scored against sensors it never saw.
+An agent watches real flood video, writes a dynamic 3D scene of the site, and compares a render of its own flood simulation with the real footage. It fixes the scene and the model in a render-watch-critique loop, then predicts a held-out flood that is scored against sensors it never saw.
 
 ## Status
 
