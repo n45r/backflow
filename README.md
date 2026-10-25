@@ -8,7 +8,7 @@ Work in progress. Built during the Gemini 4 Argon SF hackathon on 25 October 202
 
 ## How it works
 
-- One site description (positions and heights of the pond, weir, manholes, basement floor, door threshold, and pipe links) generates both the Three.js scene and the EPA SWMM model. A geometric error seen in the render is also an error in the physics.
+- A small shared geometry file (weir crest, door threshold, basement floor, key pipe size, pond footprint) is read by both the Three.js scene and the EPA SWMM model, so a geometric fix seen in the render also changes the physics. Water in the scene always comes from SWMM through a fixed mapping.
 - Argon watches the calibration video and writes a timeline of events (pond overflow, manhole overflow, basement wetting), with camera and time.
 - SWMM runs through PySWMM. Water in the scene always comes from SWMM output, through a fixed mapping from node depth to water planes.
 - The scene is rendered from the real camera view. Argon watches the real footage and the render side by side and lists differences in flood timing and behaviour.
