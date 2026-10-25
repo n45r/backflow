@@ -496,7 +496,7 @@ function drawScores() {
   const card = (cls, name, e) => `
     <div class="card ${cls}">
       <div class="who">${name}</div>
-      <div class="big">${mmText(e.mae_m)}<small>mm</small></div>
+      <div class="big">${(e.mae_m * 1000).toFixed(1)}<small>mm</small></div>
       <div class="what">mean error in basement depth</div>
       <div class="more">Peak ${mmText(e.peak_err_m, true)} mm${e.onset_err_s != null ? `, wetting ${e.onset_err_s > 0 ? '+' : ''}${Math.round(e.onset_err_s)} s` : ''}</div>
     </div>`;
@@ -504,10 +504,13 @@ function drawScores() {
   const b = g.blind.mae_m, i = g.informed.mae_m;
   if (b > 0 && i > 0) {
     const ratio = b / i;
-    html += `<div class="verdict-line">${ratio >= 1 ? `${ratio.toFixed(1)} times smaller error` : `Error grew ${(1 / ratio).toFixed(1)} times`}`
-      + (state.reveal.baseline && state.reveal.baseline.s6
-        ? ` <span class="dim">Baseline (${state.reveal.baseline.label || 'numeric optimiser'}): ${mmText(state.reveal.baseline.s6.mae_m)} mm</span>` : '')
-      + '</div>';
+    html += `<div class="verdict-line">${ratio >= 1 ? `${ratio.toFixed(1)} times smaller error` : `Error grew ${(1 / ratio).toFixed(1)} times`}</div>`;
+    const cmp = [];
+    const ex = state.reveal.experts;
+    if (ex && ex.s6) cmp.push(`<div class="cmp"><b>${(ex.s6.mae_m * 1000).toFixed(1)} mm</b> Researchers' calibration using sewer sensors <span class="dim">(median of 40, other floods)</span></div>`);
+    const bl = state.reveal.baseline;
+    if (bl && bl.s6) cmp.push(`<div class="cmp"><b>${(bl.s6.mae_m * 1000).toFixed(1)} mm</b> Plain optimiser <span class="dim">${bl.s6.model_wet === false ? 'but predicts the basement stays dry' : ''}</span></div>`);
+    if (cmp.length) html += `<div class="cmp-list"><div class="cmp-head">For comparison, on the same hidden flood</div>${cmp.join('')}</div>`;
   }
   $('scoreCards').innerHTML = html;
   $('scoreCards').hidden = false;

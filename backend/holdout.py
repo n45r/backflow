@@ -72,6 +72,14 @@ def make(name, event=None):
     if "baseline" in scores:
         out["baseline"] = {"label": "Numeric optimiser on video timeline", "s6": scores["baseline"]["s6"],
                            "params": models["baseline"]}
+    theirs = RUNS / "theirs_on_event20.csv"
+    if theirs.exists() and event == 20:
+        import pandas as pd
+        df = pd.read_csv(theirs)
+        out["experts"] = {"label": "Researchers' sensor-based calibration",
+                          "note": f"median of {len(df)} published calibrations on events 21 to 24, run on this flood",
+                          "s6": {"mae_m": float(df.mae_mm.median()) / 1000, "peak_err_m": float(df.peak_err_mm.median()) / 1000,
+                                 "model_wet": bool(df.wet.mean() >= 0.5)}}
     path = RUNS / "reveal" / f"{name}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out, indent=1))

@@ -142,3 +142,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   #bottom { flex-basis: 33vh; }
   .card .big { font-size: 2.5rem; }
 }
+
+.cmp-list { grid-column: 1 / -1; margin-top: 0; font-size: 15px; line-height: 1.35; color: var(--fg, #e8e8ea); }
+.cmp-head { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; margin-bottom: 2px; }
+.cmp b { display: inline-block; min-width: 72px; }
+.cmp .dim { opacity: 0.6; }

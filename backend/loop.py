@@ -97,6 +97,7 @@ class Loop:
                 self.params[k] = (lo + hi) / 2
         self.params.setdefault("basement_path", "sewer")
         self.patch = {}
+        self.video = False
         self.step = 0.4
         self.history = []
         self.renderer = Renderer()
@@ -183,13 +184,23 @@ class Loop:
                     for L, p in candidates.items()}
             for L, f in futs.items():
                 depths[L] = f.result()
-        for L in candidates:
-            renders[L] = self.renderer.render(self.scene_url, depths[L], CAM, self.times, out / f"render_{L}")
-        t_sim = time.time()
-        real = self.real_frames(out)
-        sheet = contact.judge_sheet(real, renders, self.labels, out / "contact.png")
-        verdict = argon.judge(sheet)
-        res = verdict["result"]
+        if self.video:
+            from backend import videojudge
+            onset = self.times[2] if len(self.times) > 2 else 300
+            start, end = max(0, onset - 180), onset + 420
+            video, sheet = videojudge.build_video(self.renderer, self.scene_url, depths, self.event, CAM, start, end, out)
+            t_sim = time.time()
+            verdict = videojudge.judge(video)
+            res = verdict["result"]
+            res["rows"] = [{"label": m.get("time"), "best": m.get("best"), "evidence": m.get("evidence")} for m in (res.get("moments") or [])]
+        else:
+            for L in candidates:
+                renders[L] = self.renderer.render(self.scene_url, depths[L], CAM, self.times, out / f"render_{L}")
+            t_sim = time.time()
+            real = self.real_frames(out)
+            sheet = contact.judge_sheet(real, renders, self.labels, out / "contact.png")
+            verdict = argon.judge(sheet)
+            res = verdict["result"]
         winner = res.get("winner") if res.get("winner") in candidates else "A"
         chosen = candidates[winner]
         changed = {k: v for k, v in chosen.items() if self.params.get(k) != v}
@@ -259,12 +270,15 @@ def main():
     ap.add_argument("--name", default="calib")
     ap.add_argument("--rounds", type=int, default=3, help="numeric rounds after the path round")
     ap.add_argument("--no-structure", action="store_true")
+    ap.add_argument("--video", action="store_true", help="Argon judges a side-by-side video instead of still frames")
     a = ap.parse_args()
     if a.live:
         rec = live_round(a.live)
         print("live round", rec["round"], rec["winner"], rec["applied_knobs"], rec["seconds"])
         return
-    records, frozen = Loop(a.event, ROOT / a.scene, a.name).run(a.rounds, structure=not a.no_structure)
+    lp = Loop(a.event, ROOT / a.scene, a.name)
+    lp.video = a.video
+    records, frozen = lp.run(a.rounds, structure=not a.no_structure)
     for r in records:
         print(r["round"], r["kind"], r.get("winner"), r["applied_knobs"], r.get("scene_changed"), r["seconds"])
     print("frozen", frozen["sha"], frozen["params"])
