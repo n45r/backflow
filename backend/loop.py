@@ -67,6 +67,12 @@ def file_sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
 
 
+def _valid_module(path):
+    import subprocess
+    r = subprocess.run(["node", "--input-type=module", "--check"], stdin=open(path), capture_output=True)
+    return r.returncode == 0
+
+
 def merge(a, b):
     for k, v in b.items():
         if isinstance(v, dict) and isinstance(a.get(k), dict):
@@ -102,7 +108,7 @@ class Loop:
         from backend import frames
         return frames.real_frames(self.event, CAM, times or self.times, out / "real")
 
-    def structural_round(self, n, max_iter=2):
+    def structural_round(self, n, max_iter=3):
         out = self.dir / f"round_{n:02d}"
         out.mkdir(parents=True, exist_ok=True)
         t0 = time.time()
@@ -120,9 +126,20 @@ class Loop:
             res = fix["result"]
             log.append({"pass": i, "differences": res.get("differences"), "patch": res.get("patch"),
                         "confidence": res.get("confidence"), "seconds": fix["seconds"], "usage": fix["usage"]})
-            if not res.get("patch"):
+            rewrite = (res.get("rewrite") or "").strip()
+            if rewrite:
+                new_scene = self.scene.with_name(f"{self.dir.name}_s{i + 1}.js")
+                rw = argon.patch_scene(self.scene.read_text(), rewrite, sheet, new_scene)
+                log[-1]["rewrite"] = {"instruction": rewrite, "new_scene": str(new_scene), "seconds": rw["seconds"]}
+                if _valid_module(new_scene):
+                    self.scene = new_scene
+                    self.scene_url = "/" + str(self.scene.relative_to(ROOT / "web"))
+                else:
+                    log[-1]["rewrite"]["rejected"] = "syntax check failed"
+            if res.get("patch"):
+                self.patch = merge(self.patch, res["patch"])
+            if not res.get("patch") and not rewrite:
                 break
-            self.patch = merge(self.patch, res["patch"])
         (self.dir / "patch.json").write_text(json.dumps(self.patch, indent=1))
         evidence = "; ".join(d for l in log for d in (l.get("differences") or []))
         record = {"round": n, "kind": "structure", "event": self.event, "scene": str(self.scene),
@@ -130,7 +147,7 @@ class Loop:
                   "contact": str(sheet),
                   "critique": {"rows": [{"label": "dry frame", "verdict": "patched" if self.patch else "same", "evidence": evidence}],
                                "passes": log},
-                  "applied_knobs": {}, "scene_changed": bool(self.patch), "seconds": {"total": round(time.time() - t0, 1)}}
+                  "applied_knobs": {}, "scene_changed": bool(self.patch) or any(l.get("rewrite") for l in log), "seconds": {"total": round(time.time() - t0, 1)}}
         (out / "round.json").write_text(json.dumps(record, indent=1, default=str))
         self.history.append({"round": n, "scene_patch": bool(self.patch)})
         return record
@@ -205,10 +222,8 @@ class Loop:
                 rec = self.judged_round(n, self.numeric_candidates(), "numeric")
                 records.append(rec)
                 n += 1
-                if rec["critique"].get("direction") == "ok":
-                    break
                 same = same + 1 if rec["winner"] == "A" else 0
-                if same >= 2:
+                if same >= 2 or (same >= 1 and rec["critique"].get("direction") == "ok" and _ > 0):
                     break
         finally:
             self.renderer.close()

@@ -275,11 +275,14 @@ The attached sheet shows, per row, the real camera frame (left) and our render o
 
 Compare left and right: where is the real camera looking, what is in view (walls, drain, door, stairs), and how is the render different? Propose a small patch that moves the virtual camera and, if clearly needed, named objects or the basement drain position so the render matches the real view. Change only what the picture justifies. If the views already match, return an empty patch.
 
+Some problems cannot be fixed by moving things: an object that is missing or hidden (for example the floor drain covered by the floor), a wrong shape, or a missing landmark that is clearly visible in the real frame. For those, write a short "rewrite" instruction for the author of the scene code. Leave it empty if a patch is enough.
+
 Reply with JSON only:
 {"differences": ["..."],
  "patch": {"cameras": {"cam5": {"position": [x, y, z], "lookAt": [x, y, z], "fov": 70}},
            "objects": {"name": {"position": [x, y, z]}},
            "water": {"basement": {"drain_xz": [x, z], "slope": 0.01}}},
+ "rewrite": "instruction for structural code changes, or empty string",
  "confidence": 0.0-1.0}"""
 
 
