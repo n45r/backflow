@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.make_submission_video import FF, OUT, card, clip, ff, still, triptych, voice  # noqa: E402
+from scripts.make_submission_video import FF, H, OUT, W, card, clip, ff, triptych, voice  # noqa: E402
 
 LINES = [
     (8, "This is a real flood test site, filmed from many cameras: the pond, the channels, the basement, by day and by night."),
@@ -22,6 +22,15 @@ LINES = [
          "the range of the researchers' sensor-based tuning."),
     (6, "Flood video in. A flood model you can trust out."),
 ]
+
+
+def still(img, secs, out):
+    """A card with a slow push-in, so the frame is never frozen."""
+    n = int(secs * 30)
+    ff("-loop", "1", "-i", str(img), "-vf",
+       f"scale=3840:2160,zoompan=z='1+0.06*on/{n}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={W}x{H}:fps=30,format=yuv420p",
+       "-frames:v", str(n), "-c:v", "libx264", str(out))
+    return out
 
 
 def mosaic(out, secs, views=None):
@@ -89,7 +98,7 @@ def main(keep_voice=False):
                             ["Real camera", "Argon's first scene", "After Argon fixed it"], OUT / "fix3.png"),
                    OUT / "f1.png", "Argon noticed its scene was missing the drain, and rewrote its code"), 5, OUT / "f1.mp4"),
         OUT / "round_seq.mp4",
-        take_segment(take, marks["reveal view"], 13, 16, OUT / "f3.mp4"),
+        OUT / "reveal_seq.mp4",
         still(card(None, OUT / "f4.png", "Backflow  ·  github.com/n45r/backflow"), 6, OUT / "f4.mp4"),
     ]
     (OUT / "fv.txt").write_text("".join(f"file '{s}'\n" for s in segs))
