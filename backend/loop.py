@@ -190,7 +190,9 @@ class Loop:
             start, end = max(0, onset - 180), onset + 420
             video, sheet = videojudge.build_video(self.renderer, self.scene_url, depths, self.event, CAM, start, end, out)
             t_sim = time.time()
-            verdict = videojudge.judge(video)
+            key = json.dumps({"event": self.event, "scene": file_sha(self.scene), "patch": self.patch, "step": videojudge.STEP_S,
+                              "window": [start, end], "candidates": candidates}, sort_keys=True, default=str)
+            verdict = videojudge.judge(video, key)
             res = verdict["result"]
             res["rows"] = [{"label": m.get("time"), "best": m.get("best"), "evidence": m.get("evidence")} for m in (res.get("moments") or [])]
         else:

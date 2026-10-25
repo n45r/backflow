@@ -86,7 +86,23 @@ def _upload(path):
     return f
 
 
-def judge(video):
+def _cache_path(key):
+    import hashlib
+    return Path(__file__).resolve().parent.parent / "runs" / "argon_cache" / f"video_{hashlib.sha256(key.encode()).hexdigest()[:24]}.json"
+
+
+def judge(video, key=None):
+    """key: a description of what the video shows (candidates, scene, window). Used to record and replay answers
+    without uploading, so the demo works offline."""
+    import os
+    mode = os.environ.get("ARGON_CACHE")
+    if key and mode == "replay":
+        p = _cache_path(key)
+        if not p.exists():
+            raise RuntimeError(f"no recorded answer for this video ({p.name}); run once with ARGON_CACHE=record")
+        rec = json.loads(p.read_text())
+        rec["replay"] = True
+        return rec
     t0 = time.time()
     f = _upload(video)
     up = time.time() - t0
@@ -94,4 +110,9 @@ def judge(video):
                                     types.Part.from_text(text=BRIEF.format(step=STEP_S))],
                                    thinking="medium", max_output_tokens=65536)
     m = re.search(r"\{.*\}", reply, re.S)
-    return {"result": json.loads(m.group(0)) if m else {"raw": reply}, "usage": usage, "seconds": secs, "upload_s": round(up, 1)}
+    out = {"result": json.loads(m.group(0)) if m else {"raw": reply}, "usage": usage, "seconds": secs, "upload_s": round(up, 1)}
+    if key and mode == "record":
+        p = _cache_path(key)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(out))
+    return out
