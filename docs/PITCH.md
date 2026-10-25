@@ -16,7 +16,7 @@ Words to use on stage:
 - "The frozen model" is the model after calibration, locked and hashed before the reveal.
 - "The researchers' sensor-based calibrations" are the 40 calibrations the FloodX team published, which used all three water-level sensors.
 
-Allowed headline: "Using only camera video, Backflow corrected a flood model about as well as the researchers' own sensor-based calibrations, and its prediction held on a flood it never saw."
+Allowed headline: "Using only camera video, Backflow corrected a flood model within the range of the researchers' own sensor-based calibrations, and its prediction held on a flood it never saw."
 
 Do not say: "better than the researchers", "first ever", or "predicted the flood from video alone". The inflow is a measured input, and the model structure comes from the researchers' published template.
 
@@ -66,7 +66,7 @@ Before you start: open a second terminal with `python -m backend.loop --live cal
 | 1:22 | Click "What Argon watched". The exact video plays: real top left, A, B, C. | "This is the exact video Argon watched. Real footage, and three renders. No numbers. No sensor data." |
 | 1:30 | Argon's reply: moments, a winner and a direction, for example "less water". | (Read one moment's evidence aloud. Then:) "It picked [LIVE_WINNER] and says the next step is [LIVE_DIRECTION]." |
 | 1:42 | Round time on screen. | "That round took [ROUND_SECONDS] seconds. The network is the slow part, so the time changes from run to run. Argon only judges. My code moves the settings." |
-| 1:50 | Calibration view, round strip. | "The full run did six rounds like this." |
+| 1:50 | Calibration view, round strip. | "The full run repeated this, round by round, until Argon stopped preferring a change." |
 
 Notes on the live round:
 
@@ -91,7 +91,7 @@ Notes on the live round:
 
 | Time | On screen | Line |
 |---|---|---|
-| 2:45 | Back to the basement video, paused. | "Using only camera video, Backflow corrected a flood model about as well as the researchers' own sensor-based calibrations, and its prediction held on a flood it never saw." |
+| 2:45 | Back to the basement video, paused. | "Using only camera video, Backflow corrected a flood model within the range of the researchers' own sensor-based calibrations, and its prediction held on a flood it never saw." |
 | 2:53 | Same. | "The US Geological Survey already runs about 1,400 cameras at river gauges. The video exists. Backflow is one way to use it. Thank you." |
 
 ## (b) Judge questions
@@ -115,10 +115,10 @@ Each hypothesis is a longer job than one call. We ran SWMM inside Managed Agents
 Vid2Sid had a vision model compare sim and real robot videos and suggest physics changes. We did not invent that idea, and we say so. Moy de Vitry and colleagues calibrated SWMM at this same site in 2020, using video signals they built by hand. HydroAgent names a vision checker as future work. What we add for drainage: Argon writes the 3D scene from the plan, fixes it against the real camera and rewrites its own scene code when it hides something; water comes only from the simulation, so Argon cannot paint it; Argon watches a video of rendered candidates beside the real flood instead of guessing numbers; and the result is scored on a hidden flood, against sensors the loop never saw.
 
 **7. What if the untuned template was already good?**
-It was not. It floods the basement 2.5 to 3 times too deep: 120 mm against 47 mm on event 32, and 92 mm against 27 mm on event 20. It also wets the basement on dry event 21. So there is a real error to fix. We report the gain as measured. The mean error fell from 33.5 to 5.9 mm and the peak error from +65 to -5 mm. The first water got later, not better: 50 seconds late, against 20 seconds early.
+It was not. It floods the basement far too deep: 213 mm against 47 mm on event 32, and 92 mm against 27 mm on event 20. It also wets the basement on dry event 21. So there is a real error to fix. We report the gain as measured. The mean error fell from 33.5 to 5.9 mm and the peak error from +65 to -5 mm. The first water got later, not better: 50 seconds late, against 20 seconds early.
 
 **8. Cost, speed, and what if the Wi-Fi drops?**
-Writing the scene is a one-time cost: 514 seconds, about 10,500 output tokens and 29,000 thinking tokens. One SWMM run of a full event takes about 4 seconds on a laptop. The video-judged run took six rounds, about six minutes: the structure round took about 2 minutes, and each judged round 46 to 55 seconds (about 30 seconds to simulate and render, 8 to 17 seconds for the judge call). One live round takes 45 to 80 seconds, because API latency varies, so we start it at the beginning of the pitch. By our token count (about 90k input and 42k output tokens, scene generation included), a full run costs under one dollar at the listed Standard price. If the Wi-Fi drops, the demo has a replay mode. It plays back Argon's recorded answers from rehearsal, and it fails loudly if an answer is missing.
+Writing the scene is a one-time cost: 514 seconds, about 10,500 output tokens and 29,000 thinking tokens. One SWMM run of a full event takes about 4 seconds on a laptop. The video-judged run took a few minutes per round: simulating and rendering three candidates, then one judge call. One live round takes 45 to 80 seconds, because API latency varies, so we start it at the beginning of the pitch. By our token count (about 90k input and 42k output tokens, scene generation included), a full run costs under one dollar at the listed Standard price. If the Wi-Fi drops, the demo has a replay mode. It plays back Argon's recorded answers from rehearsal, and it fails loudly if an answer is missing.
 
 **9. Did you beat the researchers?**
 No, and we do not say that. Video-only calibration reached about the same accuracy as their sensor-based calibrations. They published 40 calibrations that used all three water-level sensors (Zenodo 3475502). Run in our model on the same hidden flood, the median mean error is 5.3 mm (best 3.5 mm) and the median peak error is +6.9 mm. Our video run gives 5.9 mm and -5 mm. Two caveats. Their settings came from their simpler template and we ran them in our model, with our storage-curve fix. And it is one hidden flood.
@@ -145,4 +145,4 @@ Total: 60 seconds. Read the voice-over at a calm pace. Each line fits its shot.
 | 5 | 0:26 to 0:36 | The judge video: 2x2 grid, real, A, B, C, playing as a time-lapse. Winner highlighted. | "Each round, Argon watches three simulated floods beside the real one, and picks the best match. Video only. No sensor data." |
 | 6 | 0:36 to 0:48 | Two locked cards with hashes. Reveal: held-out daytime video, gauge curves, error table with the researchers' row. | "Then we lock the model and test it on a flood it never saw. Untuned, the peak is 65 millimetres too deep. After one flood video, 5 off. The researchers' own sensor-based calibrations: about the same." |
 | 7 | 0:48 to 0:55 | The plain optimiser's flat dry line against the measured basement curve. | "A plain optimiser has a low average error, but it predicts a dry basement. The real one flooded." |
-| 8 | 0:55 to 1:00 | Basement clip, paused. Repo URL. | "Using only video, a flood model corrected about as well as sensors. The cameras already exist." |
+| 8 | 0:55 to 1:00 | Basement clip, paused. Repo URL. | "Using only video, a flood model corrected to within the range of sensor-based tuning. The cameras already exist." |
