@@ -21,4 +21,4 @@ Now the core loop. The simulation predicts the flood three ways: A, B and C. Eac
 Then the real test: a different flood the model has never seen. After Argon watched just one flood, the prediction became more than five times more accurate. That's in the same range researchers get by tuning with water sensors.
 
 **End**
-Backflow. Flood video in, a flood model you can trust out.
+That means any city with a street camera or a phone video of a flood could check its flood model before spending millions on new drains. Backflow. Flood video in, a flood model you can trust out.
