@@ -23,7 +23,7 @@ def mae(a, b):
     return sum(abs(x - y) for x, y in zip(a, b)) / len(a)
 
 
-def main(run="calib_video", out_name="reveal_seq.mp4"):
+def main(run="calib_video", out_name="reveal_seq.mp4", durs=(9, 3, 4)):
     d = ROOT / "runs" / "loop" / run
     hold = json.loads((d / "holdout.json").read_text())
     rev = json.loads((ROOT / "runs" / "reveal" / f"{run}.json").read_text())
@@ -85,7 +85,7 @@ def main(run="calib_video", out_name="reveal_seq.mp4"):
 
     seq = work / "seq"
     seq.mkdir(parents=True, exist_ok=True)
-    n_play, n_sensor, n_hold = 9 * FPS, 3 * FPS, 4 * FPS
+    n_play, n_sensor, n_hold = (int(x * FPS) for x in durs)
     k = 0
     for j in range(n_play):
         i = min(len(times) - 1, int(len(times) * j / n_play))

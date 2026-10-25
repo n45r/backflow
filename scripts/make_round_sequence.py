@@ -93,7 +93,8 @@ def frame_verdict(g, winner, line):
     return frame_grid(tmp, 4, line)
 
 
-def main(run="calib_video", rnd=2, out_name="round_seq.mp4"):
+def main(run="calib_video", rnd=2, out_name="round_seq.mp4", durs=(3, 4.5, 1, 3.5, 3)):
+    n = [int(x * FPS) for x in durs]
     rd = ROOT / "runs" / "loop" / run / f"round_{rnd:02d}"
     rec = json.loads((rd / "round.json").read_text())
     depths = {}
@@ -106,22 +107,22 @@ def main(run="calib_video", rnd=2, out_name="round_seq.mp4"):
     out = ROOT / "runs" / "submission" / "seq"
     out.mkdir(parents=True, exist_ok=True)
     frames = []
-    for i in range(3 * FPS):
-        frames.append(frame_curves(depths, t, (i + 1) / (3 * FPS)))
-    for i in range(int(4.5 * FPS)):
-        g = grids[min(len(grids) - 1, int(len(grids) * i / (4.5 * FPS)))]
+    for i in range(n[0]):
+        frames.append(frame_curves(depths, t, min(1, (i + 1) / (3 * FPS))))
+    for i in range(n[1]):
+        g = grids[min(len(grids) - 1, int(len(grids) * i / n[1]))]
         frames.append(frame_grid(g, 1, "Each version is drawn in Argon's 3D scene, from the real camera's angle"))
-    for i in range(1 * FPS):
+    for i in range(n[2]):
         frames.append(frame_grid(grids[len(grids) // 2], 2, "Real flood top left, versions A, B and C: stitched into one video for Argon"))
-    for i in range(int(3.5 * FPS)):
-        g = grids[min(len(grids) - 1, int(len(grids) * i / (3.5 * FPS)))]
+    for i in range(n[3]):
+        g = grids[min(len(grids) - 1, int(len(grids) * i / n[3]))]
         frames.append(frame_grid(g, 3, "Argon watches the whole flood: which version looks like the real one?",
-                                 playhead=i / (3.5 * FPS), pulse=(i // 10) % 2 == 0))
+                                 playhead=i / n[3], pulse=(i // 10) % 2 == 0))
     w = rec["winner"]
     gi = grids[min(len(grids) - 1, int(len(grids) * 0.45))]
     line = f"Argon picks {w}: the real floor floods later and less. The settings move toward {w}. Repeated for 5 rounds."
     v = frame_verdict(gi, w, line)
-    frames += [v] * (3 * FPS)
+    frames += [v] * n[4]
     for i, f in enumerate(frames):
         f.save(out / f"s_{i:04d}.png")
     dst = ROOT / "runs" / "submission" / out_name
