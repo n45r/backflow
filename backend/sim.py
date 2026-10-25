@@ -46,6 +46,19 @@ KNOB_PLACEHOLDERS = {"outlet_cd": "cd_r4", "p3_roughness": "r_p3", "orifice_cd":
 #   null keeps site.json pipe_p7_diameter_m (0.1472 m, the measured inner diameter).
 
 
+# Physical settings an engineer may change directly, with plausible bounds (cq-analysis ranges where they exist).
+OVERRIDE_BOUNDS = {
+    "r_px": (0.005, 0.02),   # Manning n of the other pipes
+    "r_p3": (0.009, 0.03),   # Manning n of pipe p3
+    "cd_m1": (0.48, 0.72),   # orifice r1 at manhole m1
+    "cd_m3": (0.42, 0.78),   # orifice r5, basement drain
+    "cd_r4": (0.1, 1.0),     # orifice r4, outflow through valve v4
+    "cd_w1": (1.1, 2.1),     # weir w1, pond overflow
+    "cd_r6": (0.5, 1.0),     # orifice r6
+    "cd_m2": (0.4, 0.8),     # orifice r3 at manhole m2
+}
+
+
 def sha(obj):
     if isinstance(obj, (str, Path)) and Path(obj).exists():
         raw = Path(obj).read_bytes()
@@ -78,6 +91,10 @@ def build_inp(site, params, event, out_dir=None):
     for knob, placeholder in KNOB_PLACEHOLDERS.items():
         if params.get(knob) is not None:
             fill[placeholder] = params[knob]
+    for name, value in (params.get("overrides") or {}).items():
+        if name in OVERRIDE_BOUNDS:
+            lo, hi = OVERRIDE_BOUNDS[name]
+            fill[name] = min(max(float(value), lo), hi)
     p7_d = params.get("p7_diameter_m")
     p7_d = site["pipe_p7_diameter_m"] if p7_d is None else p7_d
     fill.update(data.initial_conditions(event))

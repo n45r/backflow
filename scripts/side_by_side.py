@@ -14,11 +14,12 @@ ROOT = Path(__file__).resolve().parent.parent
 FFMPEG = "/opt/homebrew/bin/ffmpeg"
 
 
-def make(run, label, event, start_s, end_s, step_s, out_name, patch=None, scene=None, depths=None):
+def make(run, label, event, start_s, end_s, step_s, out_name, patch=None, scene=None, depths=None, fps=4):
     d = ROOT / "runs" / "loop" / run
     frozen = json.loads((d / "frozen.json").read_text())
     scene = scene or frozen["scene"]
-    depths = depths or json.loads((d / "holdout.json").read_text())[f"{label}_depths"] if event != frozen["event"] else depths
+    if depths is None:
+        depths = json.loads((d / "holdout.json").read_text())[f"{label}_depths"]
     out = ROOT / "runs" / "videos" / out_name
     work = out.with_suffix("")
     work.mkdir(parents=True, exist_ok=True)
@@ -41,7 +42,7 @@ def make(run, label, event, start_s, end_s, step_s, out_name, patch=None, scene=
         dr.text((660, 12), f"Simulation ({label})", fill="white", font=font)
         dr.text((1120, 12), f"t = {t // 60}:{t % 60:02d}", fill="white", font=font)
         im.save(work / f"f_{i:04d}.png")
-    subprocess.run([FFMPEG, "-y", "-v", "error", "-framerate", "4", "-i", str(work / "f_%04d.png"),
+    subprocess.run([FFMPEG, "-y", "-v", "error", "-framerate", str(fps), "-i", str(work / "f_%04d.png"),
                     "-pix_fmt", "yuv420p", "-vf", "scale=1290:-2", str(out)], check=True)
     return out
 
