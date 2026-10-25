@@ -73,6 +73,88 @@ def mosaic(out, secs, views=None):
        "-c:v", "libx264", str(out))
     return out
 
+def titled(src_mp4, title, out):
+    """Put a clean title bar over a clip."""
+    from PIL import Image, ImageDraw
+    from backend.contact import _font
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(ov)
+    d.rectangle([0, 0, W, 110], fill=(11, 11, 12, 235))
+    f = _font(44)
+    d.text(((W - d.textlength(title, font=f)) / 2, 30), title, fill=(236, 236, 236, 255), font=f)
+    png = out.with_suffix(".png")
+    ov.save(png)
+    ff("-i", str(src_mp4), "-i", str(png), "-filter_complex", "[0:v][1:v]overlay=0:0,format=yuv420p", "-c:v", "libx264", str(out))
+    return out
+
+
+def agents_segment(out, secs=6):
+    """Three Managed Agents, one per theory of how the water gets in, from a recorded run."""
+    from PIL import Image, ImageDraw
+    from backend.contact import _font
+    src = ROOT / "runs/loop/ma_demo/round_01/round.json"
+    if not src.exists():
+        src = ROOT / "runs/loop/calib_workers/round_01/round.json"
+    rec = json.loads(src.read_text())
+    ph = rec["workers"]["per_hypothesis"]
+    theories = [("sewer", "Water comes up the floor drain"), ("door", "Water comes in under the door"), ("both", "Both ways")]
+    work = OUT / "agents"
+    work.mkdir(exist_ok=True)
+    n = int(secs * 30)
+    f44, f30, f26 = _font(44), _font(30), _font(26)
+    cw, gap = 520, 40
+    x0 = (W - 3 * cw - 2 * gap) // 2
+    for i in range(n):
+        im = Image.new("RGB", (W, H), (11, 11, 12))
+        d = ImageDraw.Draw(im)
+        title = "Gemini Managed Agents: one agent per theory"
+        d.text(((W - d.textlength(title, font=f44)) / 2, 40), title, fill=(236, 236, 236), font=f44)
+        sub = "Each agent runs the drainage simulation in its own cloud sandbox and tunes the settings for its theory"
+        d.text(((W - d.textlength(sub, font=f26)) / 2, 110), sub, fill=(130, 130, 135), font=f26)
+        for k, (key, label) in enumerate(theories):
+            x, y = x0 + k * (cw + gap), 220
+            d.rounded_rectangle([x, y, x + cw, y + 640], 14, outline=(48, 48, 52), width=2)
+            d.text((x + 30, y + 30), f"Agent {k + 1}", fill=(130, 130, 135), font=f26)
+            d.text((x + 30, y + 70), label, fill=(236, 236, 236), font=f30)
+            v = ph.get(key) or {}
+            frac = i / n
+            if frac < 0.4:
+                dots = "." * (1 + (i // 8) % 3)
+                d.text((x + 30, y + 160), f"Running simulations{dots}", fill=(90, 160, 255), font=f30)
+                continue
+            if v.get("best_knobs"):
+                runs = v.get("n_cal_runs_logged") or v.get("n_cal_runs_reported") or 0
+                lines = [("Finished", (90, 160, 255)),
+                         (f"{runs} simulation runs", (236, 236, 236)),
+                         (f"{int(v.get('wall_seconds') or 0) // 60} min {int(v.get('wall_seconds') or 0) % 60} s", (236, 236, 236)),
+                         ("Best settings found:", (130, 130, 135))]
+                for kk, vv in v["best_knobs"].items():
+                    lines.append((f"  {kk.replace('_', ' ')}  {vv:.3g}", (200, 200, 205)))
+            else:
+                lines = [("Did not finish in time", (130, 130, 135)), ("Left out of the comparison", (130, 130, 135))]
+            for j, (s, col) in enumerate(lines):
+                d.text((x + 30, y + 160 + j * 52), s, fill=col, font=f30)
+        foot = "Then Argon watches each agent's version beside the real flood, and picks"
+        d.text(((W - d.textlength(foot, font=f30)) / 2, H - 120), foot, fill=(236, 236, 236), font=f30)
+        im.save(work / f"a_{i:04d}.png")
+    ff("-framerate", "30", "-i", str(work / "a_%04d.png"), "-pix_fmt", "yuv420p", "-c:v", "libx264", str(out))
+    return out
+
+
+
+def end_card(out):
+    from PIL import Image, ImageDraw
+    from backend.contact import _font
+    im = Image.new("RGB", (W, H), (11, 11, 12))
+    d = ImageDraw.Draw(im)
+    for y, s, f, col in ((380, "Backflow", _font(96), (236, 236, 236)),
+                         (520, "Flood video in. A checked flood model out.", _font(44), (236, 236, 236)),
+                         (640, "Gemini 4 Argon  ·  Managed Agents  ·  github.com/n45r/backflow", _font(30), (130, 130, 135))):
+        d.text(((W - d.textlength(s, font=f)) / 2, y), s, fill=col, font=f)
+    im.save(out)
+    return out
+
+
 def take_segment(src, start, dur_src, secs, out):
     return clip(src, start, dur_src, secs, out)
 
@@ -84,22 +166,23 @@ def main(keep_voice=False):
     night = ROOT / "data" / "clips" / "32_cam5.mp4"
     scene_fix = OUT / "scene_fix.png"
     segs = [
-        mosaic(OUT / "f0.mp4", 5, views=[
+        mosaic(OUT / "f0.mp4", 4, views=[
             [(ROOT / "data/clips/20_cam1.mp4", 180, "Pond"),
              (ROOT / "data/raw/video/161006A/cam3/c3_cam3_instar_161006_143254_144255.avi", 330, "Channel"),
              (ROOT / "data/clips/20_cam5.mp4", 200, "Basement")],
             [(ROOT / "data/clips/32_cam1.mp4", 240, "Pond"),
              (ROOT / "data/raw/video/161006B/cam3/c3_cam3_instar_161006_211833_212838.avi", 120, "Channel"),
              (ROOT / "data/clips/32_cam5.mp4", 250, "Basement")]]),
-        still(card(OUT / "plan.png", OUT / "f0b.png", "Plus the site plan"), 3, OUT / "f0b.mp4"),
-        clip(OUT / "orbit.mp4", 0, 6, 5, OUT / "f1a.mp4"),
+        still(card(OUT / "plan.png", OUT / "f0b.png", "Gemini 4 Argon reads the site plan"), 2.5, OUT / "f0b.mp4"),
+        titled(clip(OUT / "orbit.mp4", 0, 6, 4, OUT / "f1a_raw.mp4"), "...and builds the whole site in 3D, in one pass", OUT / "f1a.mp4"),
         still(card(triptych([RUN_DIR / "round_00/real/32_cam5_t00000.jpg", RUN_DIR / "round_00/render_0/cam5_t00000.png",
                              sorted((RUN_DIR / "round_00").glob("render_*/cam5_t00000.png"))[-1]],
                             ["Real camera", "Argon's first scene", "After Argon fixed it"], OUT / "fix3.png"),
-                   OUT / "f1.png", "Argon noticed its scene was missing the drain, and rewrote its code"), 5, OUT / "f1.mp4"),
+                   OUT / "f1.png", "Argon noticed its scene was missing the drain, and rewrote its code"), 4, OUT / "f1.mp4"),
+        agents_segment(OUT / "f_agents.mp4", 6),
         OUT / "round_seq.mp4",
         OUT / "reveal_seq.mp4",
-        still(card(None, OUT / "f4.png", "Backflow  ·  github.com/n45r/backflow"), 6, OUT / "f4.mp4"),
+        still(end_card(OUT / "f4.png"), 4.5, OUT / "f4.mp4"),
     ]
     (OUT / "fv.txt").write_text("".join(f"file '{s}'\n" for s in segs))
     ff("-f", "concat", "-safe", "0", "-i", str(OUT / "fv.txt"), "-c", "copy", str(OUT / "final_video_only.mp4"))

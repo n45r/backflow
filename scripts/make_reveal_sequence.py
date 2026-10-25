@@ -56,7 +56,7 @@ def main(run="calib_video", out_name="reveal_seq.mp4"):
         im = Image.new("RGB", (W, H), BG)
         dr = ImageDraw.Draw(im)
         f40, f26 = _font(40), _font(26)
-        title = "A flood it never saw"
+        title = "The test: a different flood the model has never seen"
         dr.text(((W - dr.textlength(title, font=f40)) / 2, 40), title, fill=INK, font=f40)
         panels = [(real[i], "Real camera", INK), (ren_before[i], "Before: untuned model", BEFORE),
                   (ren_after[i], "After watching one other flood", AFTER)]
@@ -75,14 +75,17 @@ def main(run="calib_video", out_name="reveal_seq.mp4"):
             dr.line([px(t_rev[j], measured[j]) for j in range(m)], fill=SENSOR, width=3)
             dr.text((cx0, cy1 + 20), "White: the water-level sensor, revealed only now", fill=SENSOR, font=f26)
         if final:
-            line = "Off by 34 mm before.  Off by 6 mm after watching one flood."
-            f34 = _font(34)
-            dr.text(((W - dr.textlength(line, font=f34)) / 2, H - 70), line, fill=INK, font=f34)
+            dr.rectangle([0, cy0 - 70, W, H], fill=BG)
+            f60, f30 = _font(64), _font(32)
+            l1 = "Off by 34 mm before.   Off by 6 mm after."
+            l2 = "6 mm is within the range of the researchers' own sensor-based tuning."
+            dr.text(((W - dr.textlength(l1, font=f60)) / 2, cy0 + 40), l1, fill=INK, font=f60)
+            dr.text(((W - dr.textlength(l2, font=f30)) / 2, cy0 + 150), l2, fill=QUIET, font=f30)
         return im
 
     seq = work / "seq"
     seq.mkdir(parents=True, exist_ok=True)
-    n_play, n_sensor, n_hold = 10 * FPS, 3 * FPS, 3 * FPS
+    n_play, n_sensor, n_hold = 9 * FPS, 3 * FPS, 4 * FPS
     k = 0
     for j in range(n_play):
         i = min(len(times) - 1, int(len(times) * j / n_play))

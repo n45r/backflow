@@ -17,26 +17,31 @@ STEPS = ["Simulate", "Draw in 3D", "Send video", "Argon watching", "Verdict"]
 COLORS = {"A": (170, 170, 175), "B": (90, 160, 255), "C": (230, 140, 90)}
 
 
+TITLE = "Argon tunes the model by watching the real flood"
+
+
 def step_line(d, cur):
-    f = _font(26)
-    x = 80
-    for i, s in enumerate(STEPS):
-        d.text((x, 48), s, fill=INK if i == cur else QUIET, font=f)
-        x += d.textlength(s, font=f) + 26
-        if i < len(STEPS) - 1:
-            d.text((x - 18, 48), "·", fill=QUIET, font=f)
+    f40 = _font(40)
+    d.text(((W - d.textlength(TITLE, font=f40)) / 2, 30), TITLE, fill=INK, font=f40)
+    f = _font(28)
+    labels = [f"{i + 1}  {s}" for i, s in enumerate(STEPS)]
+    total = sum(d.textlength(s, font=f) for s in labels) + 56 * (len(STEPS) - 1)
+    x = (W - total) / 2
+    for i, s in enumerate(labels):
+        d.text((x, 92), s, fill=(90, 160, 255) if i == cur else QUIET, font=f)
+        x += d.textlength(s, font=f) + 56
 
 
 def caption(d, text):
-    f = _font(30)
-    d.text((80, H - 90), text, fill=INK, font=f)
+    f = _font(32)
+    d.text(((W - d.textlength(text, font=f)) / 2, H - 80), text, fill=INK, font=f)
 
 
 def frame_curves(depths, t, frac):
     im = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(im)
     step_line(d, 0)
-    x0, y0, x1, y1 = 160, 220, W - 160, H - 200
+    x0, y0, x1, y1 = 160, 240, W - 160, H - 200
     peak = max(max(v["s6"]) for v in depths.values()) or 1
     n = len(t)
     upto = max(2, int(n * frac))
@@ -45,7 +50,7 @@ def frame_curves(depths, t, frac):
         d.line(pts, fill=COLORS[L], width=4)
         d.text((pts[-1][0] + 10, pts[-1][1] - 18), L, fill=COLORS[L], font=_font(30))
     d.line([(x0, y1), (x1, y1)], fill=(40, 40, 44), width=1)
-    caption(d, "SWMM simulates three versions of the model: water depth in the basement over time")
+    caption(d, "The drainage simulation runs three versions, A, B and C: how deep the basement water gets over time")
     return im
 
 
@@ -58,8 +63,8 @@ def frame_grid(g, cur, text, playhead=None, pulse=False):
     im = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(im)
     step_line(d, cur)
-    gi = fit(Image.open(g).convert("RGB"), W - 160, H - 260)
-    x, y = (W - gi.width) // 2, 120
+    gi = fit(Image.open(g).convert("RGB"), W - 160, H - 300)
+    x, y = (W - gi.width) // 2, 150
     im.paste(gi, (x, y))
     if playhead is not None:
         by = y + gi.height + 18
@@ -103,18 +108,18 @@ def main(run="calib_video", rnd=2, out_name="round_seq.mp4"):
     frames = []
     for i in range(3 * FPS):
         frames.append(frame_curves(depths, t, (i + 1) / (3 * FPS)))
-    for i in range(5 * FPS):
-        g = grids[min(len(grids) - 1, int(len(grids) * i / (5 * FPS)))]
-        frames.append(frame_grid(g, 1, "Each version is drawn in Argon's 3D scene, from the real camera's angle, beside the real flood"))
+    for i in range(int(4.5 * FPS)):
+        g = grids[min(len(grids) - 1, int(len(grids) * i / (4.5 * FPS)))]
+        frames.append(frame_grid(g, 1, "Each version is drawn in Argon's 3D scene, from the real camera's angle"))
     for i in range(1 * FPS):
-        frames.append(frame_grid(grids[len(grids) // 2], 2, "Stitched into one time-lapse and sent to Argon"))
-    for i in range(4 * FPS):
-        g = grids[min(len(grids) - 1, int(len(grids) * i / (4 * FPS)))]
-        frames.append(frame_grid(g, 3, "Argon is watching the whole flood: real camera top left, versions A, B and C",
-                                 playhead=i / (4 * FPS), pulse=(i // 10) % 2 == 0))
+        frames.append(frame_grid(grids[len(grids) // 2], 2, "Real flood top left, versions A, B and C: stitched into one video for Argon"))
+    for i in range(int(3.5 * FPS)):
+        g = grids[min(len(grids) - 1, int(len(grids) * i / (3.5 * FPS)))]
+        frames.append(frame_grid(g, 3, "Argon watches the whole flood: which version looks like the real one?",
+                                 playhead=i / (3.5 * FPS), pulse=(i // 10) % 2 == 0))
     w = rec["winner"]
     gi = grids[min(len(grids) - 1, int(len(grids) * 0.45))]
-    line = f"Argon picks {w}: less water. The real floor floods later and less than the untuned model."
+    line = f"Argon picks {w}: the real floor floods later and less. The settings move toward {w}. Repeated for 5 rounds."
     v = frame_verdict(gi, w, line)
     frames += [v] * (3 * FPS)
     for i, f in enumerate(frames):
