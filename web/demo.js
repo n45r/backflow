@@ -248,13 +248,27 @@ function drawCritique() {
   const rows = $('rows');
   rows.innerHTML = '';
   if (!r) { $('critSub').textContent = 'No rounds yet'; return; }
-  const diff = r.rows.filter(x => x.verdict === 'different').length;
   const conf = r.confidence != null ? `, confidence ${Math.round(r.confidence * 100)}%` : '';
-  $('critSub').textContent = `Round ${r.round}, event ${r.event}: ${diff} of ${r.rows.length} moments differ${conf}`;
+  const judged = r.kind === 'path' || r.kind === 'numeric';
+  if (judged) {
+    const what = r.kind === 'path' ? 'which way water enters' : 'which settings match';
+    $('critSub').textContent = `Round ${r.round}, event ${r.event}: Argon judged ${what}. Winner ${r.winner || '-'}${conf}`;
+  } else {
+    const diff = r.rows.filter(x => x.verdict === 'different' || x.verdict === 'patched').length;
+    $('critSub').textContent = `Round ${r.round}, event ${r.event}: ${diff} of ${r.rows.length} moments differ${conf}`;
+  }
   for (const row of r.rows) {
     const li = document.createElement('li');
-    const verdict = row.verdict === 'same' ? 'same' : 'different';
-    li.innerHTML = `<span class="lab"></span><span class="verdict ${verdict}">${verdict}</span><span class="ev"></span>`;
+    let verdict, text;
+    if (judged) {
+      verdict = row.verdict === 'tie' ? 'same' : 'different';
+      text = row.verdict === 'tie' ? 'tie' : `best ${row.verdict}`;
+    } else {
+      verdict = row.verdict === 'same' ? 'same' : 'different';
+      text = row.verdict || verdict;
+    }
+    li.innerHTML = `<span class="lab"></span><span class="verdict ${verdict}"></span><span class="ev"></span>`;
+    li.querySelector('.verdict').textContent = text;
     li.querySelector('.lab').textContent = row.label;
     li.querySelector('.ev').textContent = row.evidence;
     li.onclick = () => jumpToRow(row);
@@ -274,7 +288,7 @@ function drawCritique() {
     knobs.appendChild(el);
   }
   $('patch').textContent = r.scene_patch || 'None';
-  $('evidence').textContent = r.evidence || '';
+  $('evidence').textContent = r.remaining_error || r.evidence || '';
   $('contactBtn').hidden = !r.contact_url;
 }
 
