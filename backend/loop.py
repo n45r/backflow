@@ -95,7 +95,7 @@ class Loop:
         self.renderer = Renderer()
         self.renderer.site = self.site
         self.times = key_times(event)
-        self.labels = [f"{CAM} t={t}s" for t in self.times]
+        self.labels = [f"t={t} s" for t in self.times]
 
     def real_frames(self, out, times=None):
         from backend import frames

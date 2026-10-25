@@ -13,7 +13,7 @@ def _font(size):
 def contact_sheet(real_paths, render_paths, labels, out_path, cell_w=640):
     assert len(real_paths) == len(render_paths) == len(labels)
     font, big = _font(18), _font(22)
-    strip_w, head_h, pad = 90, 36, 4
+    strip_w, head_h, pad = 130, 36, 4
     rows = []
     for rp, sp in zip(real_paths, render_paths):
         a, b = Image.open(rp).convert("RGB"), Image.open(sp).convert("RGB")
@@ -43,7 +43,7 @@ def judge_sheet(real_paths, candidates, labels, out_path, cell_w=420):
     names = list(candidates)
     assert all(len(candidates[n]) == len(real_paths) for n in names) and len(labels) == len(real_paths)
     font, big = _font(18), _font(22)
-    strip_w, head_h, pad = 90, 36, 4
+    strip_w, head_h, pad = 130, 36, 4
     cols = 1 + len(names)
     rows = []
     for i, rp in enumerate(real_paths):
