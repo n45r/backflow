@@ -17,10 +17,13 @@ TARS = {
     ("161006A", "cam5"): ("s6_cam5_instar_161006A.tar", 5047662080),
     ("161006B", "cam1"): ("s3_cam1_instar_161006B.tar", 933307904),
     ("161006B", "cam5"): ("s6_cam5_instar_161006B.tar", 574353920),
+    ("161006A", "cam3"): ("c3_cam3_instar_161006A.tar", 5103869440),
+    ("161006B", "cam3"): ("c3_cam3_instar_161006B.tar", 894851072),
 }
 OFFSETS = {  # seconds; reference = camera time minus offset
     ("161006A", "cam1"): 3, ("161006A", "cam5"): -10,
     ("161006B", "cam1"): 2, ("161006B", "cam5"): -11,
+    ("161006A", "cam3"): 10, ("161006B", "cam3"): 9,
 }
 EVENTS = {20: "161006A", 21: "161006A", 32: "161006B"}
 PAD_S = 120

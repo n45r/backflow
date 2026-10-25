@@ -24,30 +24,45 @@ LINES = [
 ]
 
 
-def mosaic(out, secs):
-    """Four real cameras at once: pond and basement, day (event 20) and night (event 32), each sped up."""
+def mosaic(out, secs, views=None):
+    """Real cameras at once, in a clean grid: columns are places on the site, rows are day and night.
+    views: list of rows, each a list of (source video, start seconds, label)."""
     from PIL import Image, ImageDraw
     from backend.contact import _font
-    clips = [(ROOT / "data/clips/20_cam1.mp4", 180, "Pond, day"), (ROOT / "data/clips/20_cam5.mp4", 200, "Basement, day"),
-             (ROOT / "data/clips/32_cam1.mp4", 240, "Pond, night"), (ROOT / "data/clips/32_cam5.mp4", 250, "Basement, night")]
-    args, inputs = [], []
-    for i, (src, start, _) in enumerate(clips):
-        args += ["-ss", str(start), "-t", str(secs * 12), "-i", str(src)]
-        inputs.append(f"[{i}:v]setpts=PTS/12,scale=960:540:force_original_aspect_ratio=decrease,pad=960:540:(ow-iw)/2:(oh-ih)/2,setsar=1[v{i}]")
+    if views is None:
+        views = [[(ROOT / "data/clips/20_cam1.mp4", 180, "Pond"), (ROOT / "data/clips/20_cam5.mp4", 200, "Basement")],
+                 [(ROOT / "data/clips/32_cam1.mp4", 240, "Pond"), (ROOT / "data/clips/32_cam5.mp4", 250, "Basement")]]
+    rows, cols = len(views), len(views[0])
+    top = 96
+    cw, ch = 1920 // cols, (1080 - top) // rows
+    args, chains, labels = [], [], []
+    k = 0
+    for r, row in enumerate(views):
+        for c, (src, start, label) in enumerate(row):
+            args += ["-ss", str(start), "-t", str(secs * 12), "-i", str(src)]
+            chains.append(f"[{k}:v]setpts=PTS/12,scale={cw}:{ch}:force_original_aspect_ratio=increase,crop={cw}:{ch},setsar=1[v{k}]")
+            labels.append((c * cw, top + r * ch, label + (", day" if r == 0 else ", night") if rows > 1 else label))
+            k += 1
     overlay = Image.new("RGBA", (1920, 1080), (0, 0, 0, 0))
     d = ImageDraw.Draw(overlay)
-    for i, (_, _, label) in enumerate(clips):
-        x, y = (i % 2) * 960, (i // 2) * 540
-        d.rectangle([x + 16, y + 470, x + 16 + 26 * len(label) // 2 + 40, y + 520], fill=(0, 0, 0, 170))
-        d.text((x + 30, y + 476), label, fill="white", font=_font(34))
-    d.rectangle([660, 500, 1260, 580], fill=(0, 0, 0, 190))
-    d.text((690, 512), "One site, many cameras", fill="white", font=_font(48))
+    d.rectangle([0, 0, 1920, top], fill=(11, 11, 12, 255))
+    title = "One site, many cameras"
+    f = _font(40)
+    d.text(((1920 - d.textlength(title, font=f)) / 2, 26), title, fill=(236, 236, 236, 255), font=f)
+    fade = 90
+    for x, y, label in labels:
+        for i in range(fade):
+            a = int(150 * i / fade)
+            d.line([(x, y + ch - fade + i), (x + cw, y + ch - fade + i)], fill=(0, 0, 0, a))
+        d.text((x + 24, y + ch - 52), label, fill=(240, 240, 240, 255), font=_font(30))
     overlay.save(OUT / "mosaic_overlay.png")
-    filt = ";".join(inputs) + ";[v0][v1][v2][v3]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[m];[m][4:v]overlay=0:0,format=yuv420p[out]"
+    layout = "|".join(f"{(i % cols) * cw}_{top + (i // cols) * ch}" for i in range(k))
+    filt = ";".join(chains) + f";color=c=0x0b0b0c:s=1920x1080:d={secs}[bg];" + "".join(f"[v{i}]" for i in range(k)) + \
+        f"xstack=inputs={k}:layout={'|'.join(f'{(i % cols) * cw}_{(i // cols) * ch}' for i in range(k))}[m];" + \
+        f"[bg][m]overlay=0:{top}[b];[b][{k}:v]overlay=0:0,format=yuv420p[out]"
     ff(*args, "-i", str(OUT / "mosaic_overlay.png"), "-filter_complex", filt, "-map", "[out]", "-t", str(secs), "-r", "30",
        "-c:v", "libx264", str(out))
     return out
-
 
 def take_segment(src, start, dur_src, secs, out):
     return clip(src, start, dur_src, secs, out)
