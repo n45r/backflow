@@ -40,7 +40,7 @@ def _file_part(path):
     return types.Part.from_bytes(data=path.read_bytes(), mime_type=mime)
 
 
-def ask(parts, thinking="high", max_output_tokens=65536):
+def ask(parts, thinking="high", max_output_tokens=65536, media_resolution=None):
     """One call. Returns (text, usage dict, seconds)."""
     start = time.time()
     resp = client().models.generate_content(
@@ -49,6 +49,7 @@ def ask(parts, thinking="high", max_output_tokens=65536):
         config=types.GenerateContentConfig(
             max_output_tokens=max_output_tokens,
             thinking_config=types.ThinkingConfig(thinking_level=thinking),
+            media_resolution=f"MEDIA_RESOLUTION_{media_resolution.upper()}" if media_resolution else None,
         ),
     )
     usage = resp.usage_metadata.model_dump() if resp.usage_metadata else {}
@@ -89,10 +90,11 @@ The attached contact sheet has one row per moment of the same flood event. Left:
 Current values: CURRENT_PLACEHOLDER
 History of earlier rounds (what was changed and why): HISTORY_PLACEHOLDER
 
-Compare left and right row by row. Look at: camera alignment and missing or misplaced structures; when and where water appears; whether the pond spills over the weir at the right time; whether the basement gets wet, when, and how far the wet area spreads; where water enters the basement (through the floor drain from below, or over the door threshold). In night infrared frames, wet concrete is darker and reflective, and water lines show on walls.
+First, for each row, decide whether left and right differ in a way that matters for the flood or the geometry, and say "same" or "different" with the specific visible evidence. Reporting no differences is a valid and common answer; do not propose changes unless a row clearly shows a difference. If every row is "same", return empty issues, an empty scene_patch and empty knob_changes. Then compare left and right row by row. Look at: camera alignment and missing or misplaced structures; when and where water appears; whether the pond spills over the weir at the right time; whether the basement gets wet, when, and how far the wet area spreads; where water enters the basement (through the floor drain from below, or over the door threshold). In night infrared frames, wet concrete is darker and reflective, and water lines show on walls.
 
 Reply with JSON only:
-{"scene_issues": ["..."], "flood_issues": ["..."],
+{"rows": [{"label": "...", "verdict": "same|different", "evidence": "..."}],
+ "scene_issues": ["..."], "flood_issues": ["..."],
  "scene_patch": "short instruction for the scene author, or empty string",
  "knob_changes": {"name": value},
  "evidence": "which rows show what, in one or two sentences",
@@ -104,7 +106,7 @@ def critique(sheet_path, knobs, current, history):
     text = (CRITIQUE_BRIEF.replace("KNOBS_PLACEHOLDER", json.dumps(knobs))
             .replace("CURRENT_PLACEHOLDER", json.dumps(current))
             .replace("HISTORY_PLACEHOLDER", json.dumps(history) if history else "none"))
-    reply, usage, secs = ask([_file_part(sheet_path), types.Part.from_text(text=text)], thinking="medium", max_output_tokens=8192)
+    reply, usage, secs = ask([_file_part(sheet_path), types.Part.from_text(text=text)], thinking="high", max_output_tokens=16384, media_resolution="high")
     m = re.search(r"\{.*\}", reply, re.S)
     return {"result": json.loads(m.group(0)) if m else {"raw": reply}, "usage": usage, "seconds": secs}
 

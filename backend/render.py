@@ -61,6 +61,7 @@ def _check_frame(path):
 
 class Renderer:
     def __init__(self, width=854, height=480):
+        self.site = {}
         self.w, self.h = width, height
         self.pw = self.browser = self.page = None
         self.scene_url = None
@@ -93,7 +94,7 @@ class Renderer:
     def _load(self, scene_url, depths):
         if scene_url != self.scene_url:
             url = scene_url if scene_url.startswith(("http", "/")) else "/" + scene_url
-            self.page.evaluate("async u => { await window.loadScene(u); }", url)
+            self.page.evaluate("async ([u, s]) => { await window.loadScene(u, s); }", [url, self.site])
             self.page.wait_for_function("window.ready === true", timeout=30000)
             self.scene_url = scene_url
         if isinstance(depths, (str, Path)):
