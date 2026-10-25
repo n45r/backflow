@@ -8,13 +8,12 @@ Work in progress. Built during the Gemini 4 Argon SF hackathon on 25 October 202
 
 ## How it works
 
-- A small shared geometry file (weir crest, door threshold, basement floor, key pipe size, pond footprint) is read by both the Three.js scene and the EPA SWMM model, so a geometric fix seen in the render also changes the physics.
-- SWMM runs through PySWMM. Water in the scene always comes from SWMM output, through a fixed mapping from node depth to water planes. A locked harness sets the water, so Argon cannot paint it.
-- Argon watches the calibration video and writes a timeline of events (pond overflow, manhole overflow, basement wetting), with camera and time.
-- The scene is rendered from the real camera view. Argon sees real frames and renders side by side and lists differences in flood timing and behaviour.
-- Parallel hypothesis workers (for example sewer backflow, surface door, weir setting) each change the model, run SWMM, and return a rendered clip. Argon judges which one matches the video.
-- When the model stops improving, it is frozen (hashed) and predicts a held-out flood from its inflow only.
-- The evaluator reveals the real footage and the gauge curves the agent never saw, and reports the errors, including failures.
+- **Argon writes the world.** From the 1:50 site plan PDF and one dry camera frame, Argon writes the full Three.js scene of the site in one pass.
+- **Water comes only from physics.** EPA SWMM (through PySWMM) computes depths at the pond, manholes and basement. A locked harness turns those depths into water in the scene. Argon cannot paint water.
+- **Argon fixes what it made.** It compares its render of the dry basement with the real camera frame and returns small patches (camera pose, object moves) or a rewrite of its own scene code when something is missing or hidden.
+- **Argon judges, the code moves.** Each round, three candidate models are simulated and rendered from the real camera's view. Argon sees only the real frames beside the renders, picks the best match per moment and names a direction. The code moves the three allowed settings toward the winner.
+- **Freeze, then a blind test.** When Argon stops preferring change, the model is frozen and hashed. It predicts a flood it never saw from its inflow alone, and only then is it scored against water-level sensors.
+- **Managed Agents.** Parallel sandbox workers can each test one hypothesis about how water reaches the basement, running SWMM inside Gemini Managed Agents with gemini-4-argon as the agent model (`workers/hypothesis.py`).
 
 ## What happens in a run
 
@@ -61,7 +60,7 @@ Already measured:
 - Real sites will have less data: fewer cameras, rougher plans, and often no measured inflow.
 - Which three settings the loop may change (outlet coefficient, p7 diameter, p3 roughness) was chosen by an offline sensitivity analysis that ran the model on all events, including the held-out one. The values were then chosen by the loop from video only. A stricter test would choose the settings without the held-out event.
 - The search took one step toward "less water" and then stopped, so the result rests on a few judgements. Two runs agreed, which is still a small sample.
-- The scene's basement storage curve had a bug that we fixed during the build; scores above use the fixed model for both the untuned and the frozen runs.
+- The SWMM model's basement storage curve had a bug that we fixed during the build; scores above use the fixed model for both the untuned and the frozen runs.
 
 ## Evidence rules
 
