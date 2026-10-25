@@ -4,7 +4,7 @@ Live demo: https://n45r.github.io/backflow/ (a recorded run, replayed in your br
 
 Cities use computer models to decide where to spend money on drains, flood walls and basement protection, but those models are often never checked against a real flood, because measuring floods is expensive. Cameras are cheap, and many already point at places that flood. Backflow is an agent that watches real flood video, builds a 3D scene of the site whose water comes only from a drainage simulation, and fixes the simulation until its render matches the video. It then predicts a flood it has never seen, and that prediction is scored against water-level sensors the agent never saw.
 
-Headline: using only camera video, Backflow corrected a flood model about as well as the researchers' own sensor-based calibrations, and its prediction held on a flood it never saw. The inflow is a measured input and the model structure comes from the researchers' published template, so this is calibration, not prediction from video alone.
+Headline: using only camera video, Backflow corrected a flood model to within the range of the researchers' own sensor-based calibrations, and its prediction held on a flood it never saw. The inflow is a measured input and the model structure comes from the researchers' published template, so this is calibration, not prediction from video alone.
 
 ## Status
 
@@ -75,6 +75,26 @@ We also ran the untuned and the corrected model (`calib_video`) on all 23 FloodX
 | After watching one flood video | 21 of 23 | 2 (18.5 mm against 7 mm measured; 10.6 mm against 0 mm) | 0 |
 
 Some of these events had different valve settings or a breached dam, which the model does not know about, so this is a rough check, not a clean benchmark.
+
+### Is Argon's judgement doing the work? Controls
+
+The loop's search is simple: each round, three candidate models, and the code moves toward the one Argon picks. So we replayed the same search with other choosers and scored each result on the hidden flood (`scripts/control_policies.py`, `scripts/all_sequences.py`, results in `docs/gates/`).
+
+| Chooser | Hidden-flood mean error | Peak error | Predicts the flood? |
+|---|---|---|---|
+| Argon watching video (`calib_video`) | 5.9 mm | -5 mm | yes |
+| Always "less water" | 4.0 mm | -27 mm | no, a dry basement |
+| Always "more water" | 137 mm | +228 mm | yes, far too deep |
+| A gauge oracle that picks by mean error on the watched flood | 4.0 mm | -27 mm | no |
+| A gauge oracle that picks by peak error on the watched flood | 4.0 mm | -27 mm | no |
+| Random choices, 8 seeds | median about 17 mm | | 7 of 8 |
+| All 81 possible pick sequences | median 27 mm among the 74 that predict a flood | | 74 of 81 |
+
+Argon's sequence ranks 12th of the 74 sequences that predict the flood, and it is one of only 7 sequences with the flood predicted and the peak within 6 mm. The obvious rule ("keep removing water") and even sensor-based oracles that fit the watched flood tightly drive the model to a dry basement on the hidden flood. Argon reduced the water, then judged the render too dry and turned back.
+
+### A run that fit the watched flood better and did worse
+
+`calib_coord` moved one setting at a time and showed Argon the whole flood including the drain-down. It fitted the watched flood more closely, then predicted a dry basement on the hidden flood. With three settings and one watched flood, fitting that flood tightly hurt the prediction on another. A grid search found settings that fit both floods' peaks (outlet 0.72, p7 0.07 m, p3 0.012), but no search here reached them from video alone. Calibrating on more than one flood is the obvious next step.
 
 ## Honest limits
 
