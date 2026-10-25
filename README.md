@@ -63,6 +63,17 @@ Already measured:
 - In the earlier still-frame variant, one judge call on a contact sheet takes about 10 seconds. In a test it chose correctly: partial water for the onset frame, a full floor for the peak frame.
 - SWMM ran inside Managed Agents sandboxes with gemini-4-argon as the agent model: three hypotheses in parallel, about 225 seconds each.
 
+### Every other flood: does the basement flood or not?
+
+We also ran the untuned and the corrected model (`calib_video`) on all 23 FloodX events that have inflow data, except event 32, which the loop watched. Water-level sensors decide the truth. File: `docs/gates/all_events_wet_dry.csv`.
+
+| Model | Correct wet/dry calls | False alarms (predicts a flooded basement that stayed dry) | Missed floods |
+|---|---|---|---|
+| Untuned template | 16 of 23 | 7 | 0 |
+| After watching one flood video | 21 of 23 | 2 (18.5 mm against 7 mm measured; 10.6 mm against 0 mm) | 0 |
+
+Some of these events had different valve settings or a breached dam, which the model does not know about, so this is a rough check, not a clean benchmark.
+
 ## Honest limits
 
 - The site is staged. FloodX is a training facility with controlled inflow, not a real street.
