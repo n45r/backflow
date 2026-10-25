@@ -10,9 +10,16 @@ from scripts.make_final_video import agents_segment, end_card, mosaic, still, ti
 from scripts.make_submission_video import OUT, card, clip, ff, triptych  # noqa: E402
 
 # Section start times in the voice track (seconds), read from its transcript.
-CUES = {"cameras": 0.0, "problem": 7.0, "plan": 17.8, "orbit": 20.0, "fix": 22.5, "agents": 25.5,
-        "loop": 32.4, "test": 50.3, "end": 60.9}
-END = 68.0
+CUES = {"cameras": 0.0, "problem": 8.14, "plan": 20.68, "orbit": 23.1, "fix": 24.86, "agents": 29.37,
+        "loop": 37.51, "test": 58.41, "end": 70.29}
+END = 78.3
+ROUND_DURS = (4.07, 6.16, 0.7, 4.25, 5.72)
+REVEAL_DURS = (1.0, 1.8, 3.08)  # the app take covers the first 6 s of the test section
+
+
+def app_clip(src, start, dur_src, secs, out):
+    """A stretch of the real app recording, sped up or slowed to fit its place in the voice-over."""
+    return clip(src, start, dur_src, secs, out)
 
 
 def main(voice):
@@ -21,8 +28,7 @@ def main(voice):
     dur = lambda a, b: round(CUES[b] - CUES[a], 2)
     for d in (OUT / "seq", OUT / "reveal" / "seq"):
         shutil.rmtree(d, ignore_errors=True)
-    make_round_sequence.main(out_name="round_voiced.mp4", durs=(3.4, 5.3, 0.7, 3.7, 4.8))
-    make_reveal_sequence.main(out_name="reveal_voiced.mp4", durs=(3.7, 1.8, 5.1))
+    make_reveal_sequence.main(out_name="reveal_voiced.mp4", durs=REVEAL_DURS)
     half = dur("problem", "plan") / 2
     segs = [
         mosaic(OUT / "v0.mp4", dur("cameras", "problem"), views=[
@@ -45,8 +51,12 @@ def main(voice):
                             ["Real camera", "Argon's first scene", "After Argon fixed it"], OUT / "fix3.png"),
                    OUT / "v4.png", "Argon noticed its scene was missing the drain, and rewrote its code"), dur("fix", "agents"),
               OUT / "v4.mp4"),
-        agents_segment(OUT / "v5.mp4", dur("agents", "loop")),
-        OUT / "round_voiced.mp4",
+        app_clip(OUT / "app_a.mp4", 3.0, 8.0, dur("agents", "loop"), OUT / "v5.mp4"),
+        app_clip(OUT / "app_a.mp4", 11.0, 6.0, 4.0, OUT / "L1.mp4"),
+        app_clip(OUT / "app_a.mp4", 17.0, 10.5, 3.5, OUT / "L2.mp4"),
+        app_clip(OUT / "app_a.mp4", 27.5, 9.5, 6.3, OUT / "L3.mp4"),
+        app_clip(OUT / "app_a.mp4", 37.0, 7.1, 7.1, OUT / "L4.mp4"),
+        app_clip(OUT / "app_b.mp4", 6.6, 10.6, 6.0, OUT / "T1.mp4"),
         OUT / "reveal_voiced.mp4",
         still(end_card(OUT / "v8.png"), round(END - CUES["end"], 2), OUT / "v8.mp4"),
     ]
