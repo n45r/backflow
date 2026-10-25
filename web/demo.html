@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backflow demo</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./demo.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div class="brand">Backflow</div>
+    <div class="run" id="runName"></div>
+    <div class="badge fixture" id="fixtureBadge" hidden>FIXTURE DATA</div>
+    <nav class="modes">
+      <button id="modeCalib" class="mode active">Calibration</button>
+      <button id="modeReveal" class="mode">Reveal</button>
+    </nav>
+  </header>
+
+  <section id="strip">
+    <span class="badge" id="stripBadge">Recorded run</span>
+    <div id="chips"></div>
+    <div id="holdoutInfo" hidden></div>
+  </section>
+
+  <main id="stage">
+    <section class="pane" id="videoPane">
+      <div class="pane-head">
+        <span class="pane-title">Real camera</span>
+        <span class="pane-sub" id="videoSub"></span>
+        <span class="badge" id="videoBadge">Recorded footage</span>
+      </div>
+      <div class="frame" id="videoFrame">
+        <video id="video" muted playsinline preload="auto"></video>
+        <div class="empty" id="videoEmpty" hidden>No clip for this camera yet</div>
+      </div>
+    </section>
+    <section class="pane" id="simPane">
+      <div class="pane-head">
+        <span class="pane-title">Simulation</span>
+        <span class="pane-sub" id="simSub"></span>
+        <span class="toggle" id="predToggle" hidden>
+          <button data-pred="blind">Blind</button><button data-pred="informed" class="on">Informed</button>
+        </span>
+        <span class="badge live">Live</span>
+      </div>
+      <div class="frame" id="simFrame">
+        <iframe id="harness" src="./index.html" title="3D simulation"></iframe>
+        <div class="empty" id="simEmpty" hidden></div>
+      </div>
+    </section>
+  </main>
+
+  <section id="transport">
+    <button id="play" class="play" aria-label="Play">&#9654;</button>
+    <div class="time" id="timeNow">00:00</div>
+    <div class="track">
+      <input id="slider" type="range" min="0" max="1000" step="1" value="0" aria-label="Time from event start">
+      <div id="ticks"></div>
+    </div>
+    <div class="time dim" id="timeEnd">00:00</div>
+    <div class="speeds" id="speeds">
+      <button data-speed="1">1x</button><button data-speed="8">8x</button><button data-speed="16" class="on">16x</button><button data-speed="32">32x</button>
+    </div>
+    <div class="cams">
+      <button data-cam="cam1">Pond and weir <small>cam1</small></button><button data-cam="cam5" class="on">Basement <small>cam5</small></button>
+    </div>
+  </section>
+
+  <section id="bottom">
+    <div id="critique" class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Critique</span>
+        <span class="pane-sub" id="critSub"></span>
+        <span class="badge" id="critBadge">Recorded run</span>
+      </div>
+      <div class="crit-body">
+        <ol id="rows"></ol>
+        <aside id="critSide">
+          <div class="label">Knob changes</div>
+          <div id="knobs"></div>
+          <div class="label" id="patchLabel">Scene patch</div>
+          <div id="patch"></div>
+          <div class="label">Evidence</div>
+          <p id="evidence"></p>
+          <button id="contactBtn" class="ghost">Contact sheet</button>
+        </aside>
+      </div>
+    </div>
+
+    <div id="revealPanel" class="panel" hidden>
+      <div class="panel-head">
+        <span class="panel-title">Basement depth, held-out event</span>
+        <span class="pane-sub" id="revealSub"></span>
+        <span class="badge live">Live</span>
+      </div>
+      <div class="reveal-body">
+        <div id="chartWrap">
+          <svg id="chart" role="img" aria-label="Basement depth over time"></svg>
+          <div id="tip" hidden></div>
+        </div>
+        <div id="scores">
+          <div id="revealGate">
+            <button id="revealBtn" class="reveal-btn">Reveal sensors</button>
+            <p class="dim">The gauges were never shown to the model. Both predictions are frozen.</p>
+          </div>
+          <div id="scoreCards" hidden></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="overlay" hidden><img id="overlayImg" alt="Contact sheet"><span class="dim">Click to close</span></div>
+<script type="module" src="./demo.js"></script>
+</body>
+</html>
