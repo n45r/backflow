@@ -1,0 +1,7 @@
+google-genai
+pyswmm
+numpy
+pandas
+fastapi
+uvicorn
+playwright
