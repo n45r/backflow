@@ -295,9 +295,14 @@ class Loop:
 
 def live_round(name, event=None, video=True):
     """One more judged round from the frozen state of an earlier run, for the live demo segment."""
-    d = RUNS / "loop" / name
+    src = RUNS / "loop" / name
+    live_name = f"{name}_live"
+    d = RUNS / "loop" / live_name
+    if not d.exists():
+        import shutil
+        shutil.copytree(src, d)
     frozen = json.loads((d / "frozen.json").read_text())
-    lp = Loop(event or frozen["event"], ROOT / frozen["scene"], name, site=frozen.get("site"), params=frozen["params"])
+    lp = Loop(event or frozen["event"], ROOT / frozen["scene"], live_name, site=frozen.get("site"), params=frozen["params"])
     lp.patch = frozen.get("patch") or {}
     lp.video = video
     from backend import videojudge
