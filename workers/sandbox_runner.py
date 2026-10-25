@@ -46,6 +46,22 @@ def onset(t, series, level, sustain_s):
     return None
 
 
+def peak_time(t, series):
+    top = max(series)
+    if top <= WET_M:
+        return None
+    return next(t[i] for i, v in enumerate(series) if v >= 0.95 * top)
+
+
+def recede_time(t, series, peak_t):
+    if peak_t is None:
+        return None
+    for i in range(len(t)):
+        if t[i] > peak_t and series[i] < WET_M:
+            return t[i]
+    return None
+
+
 def main():
     inp = Path(sys.argv[1]).resolve()
     label = sys.argv[2] if len(sys.argv) > 2 else inp.parent.name
@@ -62,15 +78,19 @@ def main():
             for n in NODES:
                 depth[n].append(round(nodes[n].depth, 5))
     crest = field(text, "WEIRS", "w1", 4)
+    peak_t = peak_time(t, depth["s6"])
     out = {
         "label": label,
         "inp": inp.name,
-        "orifice_r5_cd": field(text, "ORIFICES", "r5", 5),
-        "weir_w1_cd": field(text, "WEIRS", "w1", 5),
+        "outlet_cd": field(text, "ORIFICES", "r4", 5),
+        "p7_diameter_m": field(text, "XSECTIONS", "p7", 2),
+        "p3_roughness": field(text, "CONDUITS", "p3", 4),
         "runtime_s": round(time.time() - t0, 2),
         "continuity_error_pct": continuity_error(inp.with_suffix(".rpt")),
         "peak_mm": {n: round(max(v) * 1000, 1) for n, v in depth.items()},
         "basement_wet_onset_s": onset(t, depth["s6"], WET_M, WET_SUSTAIN_S),
+        "basement_peak_s": peak_t,
+        "basement_recede_s": recede_time(t, depth["s6"], peak_t),
         "pond_overflow_onset_s": onset(t, depth["s3"], crest, 0),
         "t": t,
         "depth_m": depth,

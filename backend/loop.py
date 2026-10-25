@@ -200,9 +200,13 @@ class Loop:
             ok = bool(brief.get("best_knobs")) and len(best) == len(numeric_knobs())
             brief.update(candidate=L, used=ok, runs=brief.get("n_cal_runs_logged"))
             if not ok:
-                brief["fallback"] = "current parameters"
+                brief["dropped"] = "worker did not finish; candidate left out rather than shown with unfitted settings"
             info["per_hypothesis"][c["basement_path"]] = brief
-            out[L] = dict(c, **best) if ok else c
+            if ok:
+                out[L] = dict(c, **best)
+        if len(out) < 2:
+            info["note"] = "fewer than two workers finished; using the plain path candidates"
+            out = cands
         self.worker_info = info
         return out
 

@@ -119,6 +119,44 @@ def _cache_write(key, text, usage):
     tmp.replace(CACHE_DIR / f"{key}.json")
 
 
+def _to_input(parts):
+    """google-genai Parts to Interactions API input items. Returns None for a part type it does not map."""
+    import base64
+    items = []
+    for part in parts:
+        if getattr(part, "text", None) is not None:
+            items.append({"type": "text", "text": part.text})
+        elif getattr(part, "inline_data", None) is not None:
+            d = part.inline_data
+            kind = d.mime_type.split("/")[0]
+            if kind not in ("image", "video", "audio"):
+                return None
+            items.append({"type": kind, "data": base64.b64encode(d.data).decode(), "mime_type": d.mime_type})
+        elif getattr(part, "file_data", None) is not None:
+            f = part.file_data
+            items.append({"type": f.mime_type.split("/")[0], "uri": f.file_uri, "mime_type": f.mime_type})
+        else:
+            return None
+    return items
+
+
+def _interactions_call(c, parts, thinking, max_output_tokens):
+    """The recommended Interactions API. Raises if the parts cannot be mapped, so the caller can fall back."""
+    items = _to_input(parts)
+    if items is None:
+        raise ValueError("part type not supported by the interactions mapping")
+    inter = c.interactions.create(model=MODEL, input=items,
+                                  generation_config={"thinking_level": thinking, "max_output_tokens": max_output_tokens})
+    u = getattr(inter, "usage", None)
+    usage = u.model_dump() if hasattr(u, "model_dump") else (dict(u) if u else {})
+    usage.setdefault("candidates_token_count", usage.get("total_output_tokens") or usage.get("output_tokens"))
+    usage.setdefault("prompt_token_count", usage.get("total_input_tokens") or usage.get("input_tokens"))
+    return inter.output_text or "", usage
+
+
+USE_INTERACTIONS = os.environ.get("ARGON_ROUTE", "interactions") == "interactions"
+
+
 def ask(parts, thinking="high", max_output_tokens=65536, media_resolution=None, attempts=4, timeout_s=240):
     """One call with a concurrency slot, retries and a log line. Returns (text, usage dict, seconds)."""
     config = types.GenerateContentConfig(
@@ -145,11 +183,21 @@ def ask(parts, thinking="high", max_output_tokens=65536, media_resolution=None, 
         with _Slot() as slot:
             t0 = time.time()
             try:
-                resp = client(slot.key, timeout_s).models.generate_content(model=MODEL, contents=parts, config=config)
-                usage = resp.usage_metadata.model_dump() if resp.usage_metadata else {}
+                route = "generate_content"
+                text = None
+                if USE_INTERACTIONS:
+                    try:
+                        text, usage = _interactions_call(client(slot.key, timeout_s), parts, thinking, max_output_tokens)
+                        route = "interactions"
+                    except Exception as ie:
+                        _log({"t": round(time.time()), "key": slot.key, "ok": False, "route": "interactions",
+                              "error": f"{type(ie).__name__}: {str(ie)[:200]}", "fallback": "generate_content"})
+                if text is None:
+                    resp = client(slot.key, timeout_s).models.generate_content(model=MODEL, contents=parts, config=config)
+                    usage = resp.usage_metadata.model_dump() if resp.usage_metadata else {}
+                    text = resp.text or ""
                 _log({"t": round(t0), "key": slot.key, "ok": True, "attempt": attempt, "wait_s": round(t0 - start, 1),
-                      "call_s": round(time.time() - t0, 1), "out_tokens": usage.get("candidates_token_count")})
-                text = resp.text or ""
+                      "route": route, "call_s": round(time.time() - t0, 1), "out_tokens": usage.get("candidates_token_count")})
             except Exception as e:
                 last = e
                 _log({"t": round(t0), "key": slot.key, "ok": False, "attempt": attempt,
