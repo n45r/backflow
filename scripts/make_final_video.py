@@ -67,8 +67,7 @@ def main(keep_voice=False):
                              sorted((RUN_DIR / "round_00").glob("render_*/cam5_t00000.png"))[-1]],
                             ["Real camera", "Argon's first scene", "After Argon fixed it"], OUT / "fix3.png"),
                    OUT / "f1.png", "Argon noticed its scene was missing the drain, and rewrote its code"), 5, OUT / "f1.mp4"),
-        take_segment(take, marks["run clicked"], marks["verdict"] - marks["run clicked"], 6, OUT / "f2a.mp4"),
-        take_segment(take, marks["verdict"], 10, 10, OUT / "f2b.mp4"),
+        OUT / "round_seq.mp4",
         take_segment(take, marks["reveal view"], 13, 16, OUT / "f3.mp4"),
         still(card(None, OUT / "f4.png", "Backflow  ·  github.com/n45r/backflow"), 6, OUT / "f4.mp4"),
     ]
