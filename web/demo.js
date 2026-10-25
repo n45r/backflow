@@ -87,17 +87,6 @@ function renderSim() {
 function currentView() {
   const d = state.data;
   if (!d) return null;
-  if (state.mode === 'reveal') {
-    const h = d.holdout;
-    if (!h) return null;
-    return {
-      event: h.event,
-      scene: state.pred === 'blind' ? h.blind_scene_url : h.informed_scene_url,
-      depths: state.pred === 'blind' ? h.blind_depths_url : h.informed_depths_url,
-      clips: h.clips,
-      patch: (state.pred === 'blind' ? h.blind_patch : h.informed_patch) || (d.frozen && d.frozen.patch) || {},
-    };
-  }
   const r = d.rounds[state.roundIdx];
   if (!r) return null;
   return { event: r.event, scene: r.scene_url, depths: r.depths_url, clips: r.clips, patch: r.patch || {} };
@@ -108,7 +97,7 @@ async function applyView() {
   const v = currentView();
   const simEmpty = $('simEmpty');
   if (!v) {
-    simEmpty.textContent = state.mode === 'reveal' ? 'No held-out prediction saved for this run yet' : 'No rounds yet';
+    simEmpty.textContent = 'No rounds yet';
     simEmpty.hidden = false;
     setClip(null);
     return;
@@ -130,7 +119,7 @@ async function applyView() {
     const end = depths && depths.t && depths.t.length ? depths.t[depths.t.length - 1] : 0;
     setDuration(end);
     const sceneName = (v.scene || '').split('/').pop();
-    $('simSub').textContent = `${sceneName}, ${state.mode === 'reveal' ? state.pred + ' model' : 'round ' + state.data.rounds[state.roundIdx].round}`;
+    $('simSub').textContent = `${sceneName}, round ${state.data.rounds[state.roundIdx].round}`;
     simEmpty.hidden = true;
     renderSim();
   } catch (e) {
@@ -173,7 +162,6 @@ function setT(t, seekVideo) {
   $('timeNow').textContent = fmt(state.t);
   if (seekVideo && videoOk()) video.currentTime = Math.min(state.t, video.duration);
   if (Math.abs(state.t - renderedT) > 0.05) renderSim();
-  updateCursor();
 }
 
 function setPlaying(p) {
@@ -187,6 +175,8 @@ function setPlaying(p) {
 function tick(now) {
   const dt = lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : 0;
   lastFrame = now;
+  liveTick(dt);
+  revealTick(dt);
   if (state.playing) {
     const useVideo = videoOk() && state.speed <= 16 && state.t < video.duration - 0.25;
     if (useVideo) {
@@ -241,12 +231,6 @@ function drawChips() {
     f.innerHTML = `Frozen<span class="k">${state.data.frozen.sha || ''}</span>`;
     box.appendChild(f);
   }
-  const r = rounds[state.roundIdx];
-  const live = r && isLive(r);
-  for (const id of ['stripBadge', 'critBadge']) {
-    $(id).textContent = live ? 'Live' : 'Recorded run';
-    $(id).classList.toggle('live', !!live);
-  }
 }
 
 function fmtVal(v) {
@@ -272,8 +256,8 @@ function drawCritique() {
     const li = document.createElement('li');
     let verdict, text;
     if (judged) {
-      verdict = row.verdict === 'tie' ? 'same' : 'different';
-      text = row.verdict === 'tie' ? 'tie' : `best ${row.verdict}`;
+      verdict = row.verdict === 'tie' ? 'same' : (row.verdict === r.winner ? 'win' : 'different');
+      text = row.verdict === 'tie' ? 'Tie' : `Best ${row.verdict}`;
     } else {
       verdict = row.verdict === 'same' ? 'same' : 'different';
       text = row.verdict || verdict;
@@ -331,7 +315,113 @@ function setCam(cam) {
   drawTicks();
 }
 
-/* ---------- reveal ---------- */
+
+/* ---------- shared pieces: 3D tiles, clocks, urls ---------- */
+
+// Server paths start with "/". The hosted copy has no server, so the same paths are made relative to the page.
+function assetUrl(p) {
+  if (!p || /^(https?:|blob:|data:)/.test(p)) return p;
+  if (STATIC) return p.startsWith('/') ? '.' + p : p;
+  return p.startsWith('/') || p.startsWith('./') ? p : '/' + p;
+}
+
+function frameReady(frame, ms = 30000) {
+  return new Promise((resolve, reject) => {
+    const t0 = performance.now();
+    const check = () => {
+      const w = frame.contentWindow;
+      if (w && typeof w.loadScene === 'function') resolve(w);
+      else if (performance.now() - t0 > ms) reject(new Error('3D view did not start'));
+      else setTimeout(check, 60);
+    };
+    check();
+  });
+}
+
+/* A tile is a box holding one copy of the locked 3D harness, scaled down to fit. */
+function attachFrame(el) {
+  const frame = document.createElement('iframe');
+  frame.src = './index.html';
+  frame.title = '3D view';
+  frame.setAttribute('tabindex', '-1');
+  el.insertBefore(frame, el.firstChild);
+  const fit = () => {
+    const r = el.getBoundingClientRect();
+    if (!r.width) return;
+    frame.style.transform = `scale(${Math.max(r.width / HW, r.height / HH)})`;
+  };
+  const ro = new ResizeObserver(fit);
+  ro.observe(el);
+  const tile = { el, frame, win: null, ready: false, failed: false, pendingT: 0, drawnT: -1 };
+  tile.load = async v => {
+    try {
+      const w = await frameReady(frame);
+      tile.win = w;
+      await w.loadScene(v.scene, v.site || {});
+      if (w.applyPatch) w.applyPatch(v.patch || {});
+      w.setCamera(v.cam || 'cam5');
+      w.loadDepths(v.depths);
+      tile.ready = true;
+      tile.draw(tile.pendingT, true);
+    } catch (e) {
+      console.error(e);
+      tile.failed = true;
+    }
+  };
+  tile.draw = (t, force) => {
+    tile.pendingT = t;
+    if (!tile.ready) return;
+    if (!force && Math.abs(t - tile.drawnT) < 0.05) return;
+    try { tile.win.setStep(t); tile.win.renderNow(); tile.drawnT = t; } catch (e) { console.error(e); }
+  };
+  tile.destroy = () => { ro.disconnect(); frame.remove(); tile.ready = false; };
+  return tile;
+}
+
+/* One shared clock. Everything on a stage reads its time from here. */
+function makeClock(lo, hi, seconds, loop) {
+  const c = {
+    lo, hi, t: lo, playing: true, loop,
+    rate: (hi - lo) / seconds,
+    set(t) { c.t = Math.max(c.lo, Math.min(c.hi, t)); },
+    advance(dt) {
+      if (!c.playing) return;
+      c.t += c.rate * dt;
+      if (c.t >= c.hi) {
+        if (c.loop) c.t = c.lo + (c.t - c.hi) % Math.max(1, c.hi - c.lo);
+        else { c.t = c.hi; c.playing = false; }
+      }
+    },
+  };
+  return c;
+}
+
+function syncVideo(v, t, force) {
+  if (!v || v.readyState < 1 || v.error || !isFinite(v.duration) || v.seeking) return;
+  const want = Math.max(0, Math.min(t, v.duration - 0.05));
+  if (force || Math.abs(v.currentTime - want) > 0.35) v.currentTime = want;
+}
+
+function clockSeconds(label) {
+  const m = /^(\d+):(\d{1,2})$/.exec(String(label || '').trim());
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+function fitBox(wrap, box, aspect) {
+  const r = wrap.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  const w = Math.min(r.width, r.height * aspect);
+  box.style.width = `${Math.floor(w)}px`;
+  box.style.height = `${Math.floor(w / aspect)}px`;
+}
+
+function mmShort(m) {
+  const v = m * 1000;
+  if (!isFinite(v)) return 'n/a';
+  return (v >= 9.5 ? String(Math.round(v)) : String(Number(v.toFixed(1)))) + ' mm';
+}
+
+/* ---------- modes ---------- */
 
 function setMode(mode) {
   state.mode = mode;
@@ -340,36 +430,118 @@ function setMode(mode) {
   $('modeCalib').classList.toggle('active', mode === 'calib');
   $('modeReveal').classList.toggle('active', mode === 'reveal');
   $('critique').hidden = mode !== 'calib';
-  $('revealPanel').hidden = mode !== 'reveal';
+  $('reveal').hidden = mode !== 'reveal';
   $('chips').hidden = mode !== 'calib';
-  $('holdoutInfo').hidden = mode !== 'reveal';
-  $('predToggle').hidden = mode !== 'reveal';
-  $('stripBadge').hidden = mode !== 'calib';
+  $('stripBadge').hidden = true;
   setPlaying(false);
   setT(0, true);
-  if (mode === 'live') return;
+  if (mode === 'live') { fitStage(); return; }
   if (mode === 'reveal') {
-    const h = state.data && state.data.holdout;
-    const f = state.data && state.data.frozen;
-    $('holdoutInfo').innerHTML = h
-      ? `Held-out event <b>${h.event}</b>. The model never saw this video or its sensors.` + (f ? ` Prediction frozen at <b>${f.sha}</b>.` : '')
-      : 'No held-out prediction saved for this run yet.';
-    loadHoldoutPredictions();
+    openReveal();
   } else {
     drawChips();
+    applyView().then(drawTicks);
   }
-  applyView().then(drawTicks);
 }
 
-async function loadHoldoutPredictions() {
+/* ---------- reveal ---------- */
+
+const rv = { built: false, tiles: {}, clock: null, video: null, tMax: 0, lastSeek: 0, lastDraw: 0, key: null };
+
+function argmax(a) {
+  let k = 0;
+  for (let i = 1; i < a.length; i++) if (a[i] > a[k]) k = i;
+  return k;
+}
+
+async function openReveal() {
   const h = state.data && state.data.holdout;
-  if (!h) { drawChart(); return; }
+  const f = state.data && state.data.frozen;
+  if (!h) {
+    $('revealNote').textContent = 'No held-out prediction saved for this run yet.';
+    drawChart();
+    return;
+  }
+  $('revealNote').textContent = `Flood ${h.event}. The model never saw this video or its sensors.` + (f && f.sha ? ` Prediction frozen at ${f.sha}.` : '');
   try {
     const [b, i] = await Promise.all([getDepths(h.blind_depths_url), getDepths(h.informed_depths_url)]);
     state.holdout = { blind: b, informed: i };
   } catch (e) { console.error(e); }
-  $('revealSub').textContent = `Event ${h.event}, depth in mm above the basement floor`;
   drawChart();
+  buildReveal(h);
+}
+
+function buildReveal(h) {
+  const { blind, informed } = state.holdout;
+  const base = informed || blind;
+  if (!base) return;
+  const key = `${h.event}:${h.informed_depths_url}`;
+  if (rv.built && rv.key === key) { fitReveal(); return; }
+  for (const t of Object.values(rv.tiles)) t.destroy();
+  rv.tiles = {};
+  rv.key = key;
+  rv.built = true;
+  const tMax = base.t[base.t.length - 1];
+  rv.tMax = tMax;
+  rv.clock = makeClock(0, tMax, 40, true);
+  const site = state.data.site || {};
+  const frozenPatch = (state.data.frozen && state.data.frozen.patch) || {};
+  const mk = (id, scene, depths, patch) => {
+    const t = attachFrame($(id));
+    rv.tiles[id] = t;
+    if (depths && scene) t.load({ scene: assetUrl(scene), depths, patch: patch || frozenPatch, site, cam: 'cam5' });
+  };
+  mk('rvBlind', h.blind_scene_url, blind, h.blind_patch);
+  mk('rvInformed', h.informed_scene_url, informed, h.informed_patch);
+  setWhich('informed');
+  rv.video = $('rvVideo');
+  const clip = h.clips && h.clips.cam5;
+  if (clip) {
+    rv.video.src = assetUrl(clip);
+    rv.video.addEventListener('loadedmetadata', () => syncVideo(rv.video, rv.clock.t, true), { once: true });
+  }
+  $('rvRealCap').textContent = `Real camera, hidden flood ${h.event}`;
+  $('rvSlider').max = Math.round(tMax);
+  paintReveal(true);
+}
+
+function setWhich(w) {
+  $('rvBlind').classList.toggle('off', w !== 'blind');
+  $('rvInformed').classList.toggle('off', w !== 'informed');
+  $('rvModelCap').textContent = w === 'blind' ? 'Model before, untuned' : 'Model after watching one flood';
+  document.querySelectorAll('#rvToggle button').forEach(b => b.classList.toggle('on', b.dataset.w === w));
+  if (rv.clock) paintReveal(true);
+}
+
+function fitReveal() { paintReveal(true); }
+
+function paintReveal(force) {
+  const c = rv.clock;
+  if (!c) return;
+  $('rvTime').textContent = fmt(c.t);
+  $('rvSlider').value = Math.round(c.t);
+  $('rvPlay').textContent = c.playing ? 'Pause' : 'Play';
+  $('rvPlay').setAttribute('aria-label', c.playing ? 'Pause' : 'Play');
+  updateCursor(c.t);
+  const now = performance.now();
+  if (force || now - rv.lastDraw > 60) {
+    for (const [id, t] of Object.entries(rv.tiles)) if (!t.el.classList.contains('off')) t.draw(c.t, force);
+    rv.lastDraw = now;
+  }
+  if (force || now - rv.lastSeek > 160) { syncVideo(rv.video, c.t, force); rv.lastSeek = now; }
+}
+
+function revealTick(dt) {
+  if (state.mode !== 'reveal' || !rv.clock) return;
+  const was = rv.clock.t;
+  rv.clock.advance(dt);
+  if (rv.clock.playing || rv.clock.t !== was) paintReveal(false);
+}
+
+function revealSeek(t) {
+  if (!rv.clock) return;
+  rv.clock.set(t);
+  paintReveal(true);
 }
 
 async function doReveal() {
@@ -381,7 +553,7 @@ async function doReveal() {
   } catch (e) {
     btn.disabled = false;
     btn.textContent = 'Reveal sensors';
-    $('revealGate').querySelector('p').textContent = 'No evaluator output saved for this run yet.';
+    $('revealGate').querySelector('span').textContent = 'No evaluator output saved for this run yet.';
     return;
   }
   $('revealGate').hidden = true;
@@ -390,10 +562,9 @@ async function doReveal() {
 }
 
 function chartSeries() {
-  const rv = state.reveal && state.reveal.gauges && state.reveal.gauges.s6;
-  if (rv) {
-    const t = state.reveal.t;
-    return { t, blind: rv.blind_m, informed: rv.informed_m, measured: rv.measured_m };
+  const rvl = state.reveal && state.reveal.gauges && state.reveal.gauges.s6;
+  if (rvl) {
+    return { t: state.reveal.t, blind: rvl.blind_m, informed: rvl.informed_m, measured: rvl.measured_m };
   }
   const { blind, informed } = state.holdout;
   const base = informed || blind;
@@ -402,12 +573,13 @@ function chartSeries() {
 }
 
 function niceStep(max) {
-  const raw = max / 4;
+  const raw = max / 3;
   const p = Math.pow(10, Math.floor(Math.log10(raw)));
   return [1, 2, 2.5, 5, 10].map(m => m * p).find(s => s >= raw);
 }
 
 let chartGeom = null;
+const SVGNS = 'http://www.w3.org/2000/svg';
 
 function drawChart(animateMeasured) {
   const svg = $('chart');
@@ -418,55 +590,53 @@ function drawChart(animateMeasured) {
   if (!S || !W || !H) { svg.innerHTML = ''; chartGeom = null; return; }
   const mm = a => (a || []).map(v => v * 1000);
   const series = [
-    ['blind', 'Blind', mm(S.blind)],
-    ['informed', 'Informed', mm(S.informed)],
+    ['blind', 'Before', mm(S.blind)],
+    ['informed', 'After', mm(S.informed)],
     ['measured', 'Measured', S.measured ? mm(S.measured) : null],
   ].filter(s => s[2] && s[2].length);
   const tMax = S.t[S.t.length - 1];
   const yMaxRaw = Math.max(10, ...series.flatMap(s => s[2]));
   const step = niceStep(yMaxRaw * 1.05);
   const yMax = Math.ceil((yMaxRaw * 1.05) / step) * step;
-  const m = { l: 48, r: 104, t: 12, b: 28 };
+  const m = { l: 56, r: 96, t: 14, b: 26 };
   const X = t => m.l + (t / tMax) * (W - m.l - m.r);
   const Y = v => m.t + (1 - v / yMax) * (H - m.t - m.b);
   chartGeom = { X, Y, m, W, H, tMax, S, series };
-  let g = '';
-  for (let v = 0; v <= yMax + 1e-9; v += step) {
-    g += `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}"/>`;
-    g += `<text class="axis" x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end">${Math.round(v)}</text>`;
-  }
+  let g = `<line class="base" x1="${m.l}" x2="${W - m.r}" y1="${Y(0)}" y2="${Y(0)}"/>`;
+  g += `<text class="axis" x="${m.l - 10}" y="${Y(0) + 4}" text-anchor="end">0</text>`;
+  g += `<text class="axis" x="${m.l - 10}" y="${Y(yMax) + 4}" text-anchor="end">${yMax} mm</text>`;
   const xStep = tMax > 900 ? 300 : 120;
-  for (let t = 0; t <= tMax; t += xStep) {
+  for (let t = xStep; t <= tMax; t += xStep) {
     g += `<text class="axis" x="${X(t)}" y="${H - 6}" text-anchor="middle">${Math.round(t / 60)} min</text>`;
   }
-  g += `<text class="axis" x="${m.l - 8}" y="${m.t - 0}" text-anchor="end" dy="-2"></text>`;
   const labels = [];
   for (const [cls, name, ys] of series) {
     const d = ys.map((v, i) => `${i ? 'L' : 'M'}${X(S.t[i]).toFixed(1)},${Y(v).toFixed(1)}`).join('');
     g += `<path class="ser ${cls}${cls === 'measured' && animateMeasured ? ' draw' : ''}" d="${d}"/>`;
     const peak = Math.max(...ys);
     const ip = ys.indexOf(peak);
-    labels.push({ name, cls, x: X(S.t[ip]) + 8, y: Y(peak) - 8 });
+    labels.push({ name, cls, x: X(S.t[ip]) + 10, y: Y(peak) - 12 });
   }
   labels.sort((a, b) => a.y - b.y);
   for (let i = 1; i < labels.length; i++) {
-    if (Math.abs(labels[i].x - labels[i - 1].x) < 90) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 20);
+    if (Math.abs(labels[i].x - labels[i - 1].x) < 110) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 20);
   }
   for (const l of labels) {
-    const x = Math.min(l.x, W - m.r - 70), y = Math.max(m.t + 12, l.y);
-    g += `<text class="dl ${l.cls}" x="${x}" y="${y}">${l.name}</text>`;
+    g += `<text class="dl ${l.cls}" x="${Math.min(l.x, W - m.r + 10)}" y="${Math.max(m.t + 8, l.y)}">${l.name}</text>`;
   }
-  g += `<line class="cursor" id="cursor" y1="${m.t}" y2="${H - m.b}" x1="${X(0)}" x2="${X(0)}"/>`;
-  g += `<rect id="hit" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>`;
+  g += `<line class="cursor" id="cursor" y1="${m.t}" y2="${Y(0)}" x1="${X(0)}" x2="${X(0)}"/>`;
+  for (const [cls] of series) g += `<circle class="dot ${cls}" r="4.5" cx="-10" cy="-10" fill="var(--${cls})"/>`;
+  g += `<rect id="hit" x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H - m.b}" fill="transparent" style="cursor:pointer"/>`;
   svg.innerHTML = g;
   if (animateMeasured) {
     const p = svg.querySelector('.ser.measured');
     if (p) { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.style.strokeDashoffset = L; }
   }
-  svg.querySelector('#hit').addEventListener('mousemove', chartHover);
-  svg.querySelector('#hit').addEventListener('mouseleave', () => { $('tip').hidden = true; });
-  svg.querySelector('#hit').addEventListener('click', e => { const t = chartTime(e); setPlaying(false); setT(t, true); });
-  updateCursor();
+  const hit = svg.querySelector('#hit');
+  const go = e => { if (rv.clock) { rv.clock.playing = false; revealSeek(chartTime(e)); } };
+  hit.addEventListener('pointerdown', e => { hit.setPointerCapture(e.pointerId); go(e); });
+  hit.addEventListener('pointermove', e => { if (e.buttons & 1) go(e); });
+  updateCursor(rv.clock ? rv.clock.t : 0);
 }
 
 function chartTime(e) {
@@ -476,61 +646,804 @@ function chartTime(e) {
   return Math.max(0, Math.min(g.tMax, ((x - g.m.l) / (g.W - g.m.l - g.m.r)) * g.tMax));
 }
 
-function chartHover(e) {
-  const g = chartGeom;
-  if (!g) return;
-  const t = chartTime(e);
-  let i = 0;
-  while (i < g.S.t.length - 1 && g.S.t[i + 1] <= t) i++;
-  const tip = $('tip');
-  const colors = { blind: 'var(--blind)', informed: 'var(--informed)', measured: 'var(--measured)' };
-  tip.innerHTML = `<div class="dim">${fmt(g.S.t[i])}</div>` + g.series.map(([cls, name, ys]) =>
-    `<div><span class="sw" style="background:${colors[cls]}"></span>${name} ${ys[i].toFixed(0)} mm</div>`).join('');
-  tip.hidden = false;
-  const x = g.X(g.S.t[i]);
-  tip.style.left = `${x + (x > g.W * 0.6 ? -tip.offsetWidth - 12 : 12)}px`;
-  tip.style.top = `${g.m.t + 6}px`;
-}
-
-function updateCursor() {
+function updateCursor(t) {
   const c = document.getElementById('cursor');
   if (!c || !chartGeom) return;
-  const x = chartGeom.X(Math.min(state.t, chartGeom.tMax));
+  const g = chartGeom;
+  const x = g.X(Math.min(t, g.tMax));
   c.setAttribute('x1', x);
   c.setAttribute('x2', x);
-}
-
-function mmText(v, signed) {
-  if (v == null || !isFinite(v)) return 'n/a';
-  const n = Math.round(v * 1000);
-  return (signed && n > 0 ? '+' : '') + n;
+  let i = 0;
+  while (i < g.S.t.length - 1 && g.S.t[i + 1] <= t) i++;
+  g.series.forEach(([cls, , ys]) => {
+    const dot = document.querySelector(`#chart .dot.${cls}`);
+    if (dot) { dot.setAttribute('cx', x); dot.setAttribute('cy', g.Y(ys[i])); }
+  });
 }
 
 function drawScores() {
   const g = state.reveal.gauges.s6;
-  const card = (cls, name, e) => `
-    <div class="card ${cls}">
-      <div class="who">${name}</div>
-      <div class="big">${(e.mae_m * 1000).toFixed(1)}<small>mm</small></div>
-      <div class="what">mean error in basement depth</div>
-      <div class="more">Peak ${mmText(e.peak_err_m, true)} mm${e.onset_err_s != null ? `, wetting ${e.onset_err_s > 0 ? '+' : ''}${Math.round(e.onset_err_s)} s` : ''}</div>
-    </div>`;
-  let html = card('blind', 'Blind model', g.blind) + card('informed', 'After watching one flood', g.informed);
-  const b = g.blind.mae_m, i = g.informed.mae_m;
-  if (b > 0 && i > 0) {
-    const ratio = b / i;
-    html += `<div class="verdict-line">${ratio >= 1 ? `${ratio.toFixed(1)} times smaller error` : `Error grew ${(1 / ratio).toFixed(1)} times`}</div>`;
-    const cmp = [];
-    const ex = state.reveal.experts;
-    if (ex && ex.s6) cmp.push(`<div class="cmp"><b>${(ex.s6.mae_m * 1000).toFixed(1)} mm</b> Researchers' calibration using sewer sensors <span class="dim">(median of 40, other floods)</span></div>`);
-    const bl = state.reveal.baseline;
-    if (bl && bl.s6) cmp.push(`<div class="cmp"><b>${(bl.s6.mae_m * 1000).toFixed(1)} mm</b> Plain optimiser <span class="dim">${bl.s6.model_wet === false ? 'but predicts the basement stays dry' : ''}</span></div>`);
-    if (cmp.length) html += `<div class="cmp-list"><div class="cmp-head">For comparison, on the same hidden flood</div>${cmp.join('')}</div>`;
-  }
-  $('scoreCards').innerHTML = html;
+  const before = mmShort(g.blind.mae_m), after = mmShort(g.informed.mae_m);
+  $('sentence').innerHTML = `Off by <span class="b">${before}</span> before. Off by <span class="i">${after}</span> after watching one flood.`;
+  const ex = state.reveal.experts;
+  $('compare').textContent = ex && ex.s6
+    ? `For comparison, researchers calibrating on sewer sensors from other floods are off by ${mmShort(ex.s6.mae_m)} on this one (median of 40).`
+    : '';
+  $('compare').hidden = !(ex && ex.s6);
   $('scoreCards').hidden = false;
 }
 
+/* ---------- the round, shown step by step ---------- */
+
+const ORDER = ['agents', 'sim', 'curves', 'draw', 'send', 'watch', 'verdict'];
+const STEP_OF = { agents: 0, sim: 1, curves: 1, draw: 2, send: 3, watch: 4, verdict: 5, legacy: 4 };
+const CAPTION = {
+  agents: 'Three Managed Agents test three theories of how water enters the basement',
+  sim: 'Simulating three versions of the model',
+  curves: 'Water depth in the basement, three versions',
+  draw: 'Drawing each version from the real camera\'s view',
+  send: 'Sending the time-lapse to Argon',
+  watch: 'Argon is watching',
+};
+const live = {
+  phase: 'idle', startedLocal: 0, elapsed: 0, timer: null, videoPath: null,
+  verdictShown: false, replay: false, ready: true, active: false,
+  stage: null, stageKey: null, layout: 'stage', moments: [], view: null, viewAt: 0, viewRound: null,
+  target: 'sim', verdictEntry: null, cands: null, finished: false, total: 2, firstCands: null, doneEntry: null,
+};
+
+function setLiveState(st) {
+  live.phase = st;
+  $('live').dataset.state = st;
+  if (st === 'running' || st === 'done') requestAnimationFrame(fitStage);
+}
+
+function stepsShow(now) {
+  document.querySelectorAll('#steps li').forEach(li => {
+    const i = Number(li.dataset.step);
+    li.classList.toggle('done', i < now);
+    li.classList.toggle('now', i === now);
+  });
+}
+
+const KNOB_NAMES = { outlet_cd: 'outlet coefficient', p7_diameter_m: 'pipe 7 diameter', p3_roughness: 'pipe 3 roughness' };
+const knobName = k => KNOB_NAMES[k] || k.replace(/_m$/, '').replace(/_/g, ' ');
+const num3 = v => String(Number(Number(v).toPrecision(3)));
+
+const THEORY = { sewer: 'Water comes up the sewer drain', door: 'Water comes in under the door', both: 'Both' };
+function isPathRound(cands) {
+  return !!(cands && cands.A && ['B', 'C'].some(L => cands[L] && cands[L].basement_path !== cands.A.basement_path));
+}
+
+function describeShort(label, cands) {
+  if (isPathRound(cands) && cands[label]) return THEORY[cands[label].basement_path] || cands[label].basement_path;
+  if (!cands || !cands[label] || label === 'A') return describe(label, cands);
+  const a = cands.A || {}, c = cands[label];
+  const diffs = Object.keys(c).filter(k => c[k] !== a[k]);
+  return diffs.length > 1 ? `${diffs.length} settings changed` : describe(label, cands);
+}
+
+function describe(label, cands) {
+  if (!cands || !cands[label]) return '';
+  if (isPathRound(cands)) return THEORY[cands[label].basement_path] || '';
+  if (label === 'A') return 'current settings';
+  const a = cands.A || {}, c = cands[label];
+  const diffs = Object.keys(c).filter(k => c[k] !== a[k]);
+  if (!diffs.length) return 'same settings';
+  return diffs.map(k => {
+    if (k === 'basement_path') return `water enters by the ${c[k]}`;
+    return `${knobName(k)} ${typeof c[k] === 'number' ? num3(c[k]) : fmtVal(c[k])}`;
+  }).join(', ');
+}
+
+function lastWith(log, pred) {
+  for (let i = log.length - 1; i >= 0; i--) if (pred(log[i])) return log[i];
+  return null;
+}
+
+function setLayout(layout) {
+  live.layout = layout;
+  $('live').dataset.layout = layout;
+  fitStage();
+}
+
+function fitStage() {
+  fitBox($('stageWrap'), $('stageBox'), live.layout === 'legacy' ? 1286 / 726 : 16 / 9);
+}
+
+function setLiveVideo(path) {
+  if (!path || path === live.videoPath) return;
+  live.videoPath = path;
+  const v = $('liveVideo');
+  $('liveVideoErr').hidden = true;
+  v.src = STATIC ? assetUrl(path) : `/api/video?path=${encodeURIComponent(path)}`;
+  $('live').dataset.vid = '1';
+  if (live.layout === 'stage') $('lapseBtn').hidden = false;
+}
+
+function friendlyError(msg, tail) {
+  const all = (tail || []).join('\n') + ' ' + (msg || '');
+  if (/no recorded answer|CacheMiss|ARGON_CACHE=replay/.test(all)) {
+    return 'Offline replay has no recorded answer for this round. Restart with ./demo (no --replay) to call Argon live.';
+  }
+  return msg || 'The round stopped before Argon gave a verdict.';
+}
+
+function showError(msg, tail) {
+  setLiveState('error');
+  stopTimer();
+  $('errText').textContent = friendlyError(msg, tail);
+  $('errLog').textContent = (tail || []).slice(-8).join('\n');
+  $('errLog').hidden = !(tail && tail.length);
+}
+
+const clean = t => String(t || '').replace(/\s*[—–]\s*/g, ', ');
+
+/* ---------- view changes: one stage that visibly changes per step ---------- */
+
+function setView(v) {
+  live.view = v;
+  live.viewAt = performance.now();
+  const box = $('live');
+  box.dataset.view = v;
+  $('stepAgents').hidden = !live.viewMa;
+  $('steps').classList.toggle('ma', !!live.viewMa);
+  if (v === 'agents') startAgents();
+  stepsShow(STEP_OF[v] ?? 0);
+  const vid = $('liveVideo');
+  if (v === 'curves') drawCurvesAnimated();
+  if (v === 'send') { try { vid.pause(); vid.currentTime = 0; } catch (e) { /* not loaded yet */ } }
+  if (v === 'watch') { vid.playbackRate = 4; vid.play().catch(() => {}); }
+  if (v !== 'watch' && v !== 'legacy' && box.dataset.lapse !== '1') vid.pause();
+  $('watchMark').hidden = v !== 'watch' && v !== 'legacy';
+  if (v === 'legacy') $('watchMark').hidden = true;
+  const s = live.stage;
+  if (s) {
+    s.tilesEl.dataset.mode = (v === 'draw' && s.framesOk) ? 'frames' : 'live';
+    if (v === 'verdict' || (v === 'draw' && !s.framesOk)) paintStage(true);
+  }
+  if (v === 'verdict') {
+    if (live.verdictEntry) showVerdict(live.verdictEntry, live.cands);
+    $('caption').textContent = live.verdictEntry ? `Argon picked ${live.verdictEntry.winner}.` : '';
+  } else if (CAPTION[v]) {
+    $('caption').textContent = CAPTION[v];
+  }
+  if (v === 'sim') {
+    $('verdict').hidden = true;
+    $('trained').hidden = true;
+    $('sideHint').hidden = false;
+  }
+  if (v !== 'draw') stopFrames(); else startFrames();
+}
+
+function dwellOf(v) {
+  if (v === 'agents') return live.agentsData ? 8000 : 3500;
+  if (v === 'sim') return 1000;
+  if (v === 'curves') return 2000;
+  if (v === 'draw') return 6000;
+  if (v === 'send') return 2000;
+  if (v === 'watch') return 8000;
+  return 0;
+}
+
+function advance() {
+  if (live.layout === 'legacy' || (live.phase !== 'running' && live.phase !== 'done')) return;
+  const i = ORDER.indexOf(live.view), j = ORDER.indexOf(live.target);
+  if (j <= i || i < 0) return;
+  if (performance.now() - live.viewAt < dwellOf(live.view)) return;
+  const next = ORDER[i + 1];
+  // curves and the 3D tiles need the stage; wait for it, but never stall the verdict forever
+  if ((next === 'curves' || next === 'draw' || next === 'verdict') && !live.stage) {
+    if (next === 'curves' && live.target === 'sim') return;
+    if (live.layout === 'stage' && live.stageKey) return;
+  }
+  setView(next);
+}
+
+/* ---------- the stage: real camera and three 3D views on one clock ---------- */
+
+function teardownStage() {
+  stopFrames();
+  const s = live.stage;
+  if (s) for (const t of Object.values(s.tiles)) t.destroy();
+  live.stage = null;
+  live.stageKey = null;
+  $('tiles').innerHTML = '';
+  $('curveSvg').innerHTML = '';
+  $('live').dataset.lapse = '0';
+  $('scrubTicks').innerHTML = '';
+  $('lapseBtn').textContent = 'Show what Argon sees';
+  $('pauseBtn').textContent = 'Pause';
+}
+
+function labelHtml(letter, text, picked) {
+  return `<b>${letter}</b>${text}${picked ? '<span class="pick">Argon\'s pick</span>' : ''}`;
+}
+
+const DASH = { A: '', B: '', C: '26 14' };
+function buildCurves(depths, letters, lo, hi) {
+  const arr = d => d.depth_m[(d.map && d.map.basement) || 's6'] || d.depth_m.s6;
+  const W = 1600, H = 900, m = { l: 170, r: 120, t: 70, b: 80 };
+  let ymax = 0.001;
+  const series = depths.map(d => {
+    const pts = d.t.map((t, i) => [t, arr(d)[i] * 1000]).filter(p => p[0] >= lo && p[0] <= hi);
+    pts.forEach(p => { ymax = Math.max(ymax, p[1]); });
+    return pts;
+  });
+  const top = Math.max(10, Math.ceil(ymax * 1.1 / 10) * 10);
+  const X = t => m.l + ((t - lo) / (hi - lo)) * (W - m.l - m.r);
+  const Y = v => H - m.b - (v / top) * (H - m.t - m.b);
+  let g = `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(0)}" y2="${Y(0)}" class="cbase"/>`;
+  g += `<text x="${m.l - 16}" y="${Y(0) + 8}" text-anchor="end" class="cax">0</text>`;
+  g += `<text x="${m.l - 16}" y="${Y(top) + 8}" text-anchor="end" class="cax">${top} mm</text>`;
+  for (let t = Math.ceil(lo / 300) * 300; t <= hi; t += 300) g += `<text x="${X(t)}" y="${H - 28}" text-anchor="middle" class="cax">${Math.round(t / 60)} min</text>`;
+  letters.forEach((L, i) => {
+    const pts = series[i];
+    if (!pts.length) return;
+    const d = pts.map((p, k) => `${k ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+    g += `<path class="cl cl${L}" d="${d}" ${DASH[L] ? `stroke-dasharray="${DASH[L]}"` : ''}/>`;
+    const peak = pts.reduce((a, p) => (p[1] > a[1] ? p : a), pts[0]);
+    g += `<text class="clab cl${L}t" x="${X(peak[0]) + 18}" y="${Y(peak[1]) - 14}">${L}</text>`;
+  });
+  $('curveSvg').innerHTML = g;
+}
+
+function drawCurvesAnimated() {
+  const svg = $('curveSvg');
+  svg.classList.remove('go');
+  void svg.getBoundingClientRect();
+  svg.classList.add('go');
+}
+
+async function buildStage(rend, cands) {
+  const key = `${rend.round}:${rend.t}`;
+  if (live.stageKey === key) return;
+  teardownStage();
+  live.stageKey = key;
+  setLayout('stage');
+  const paths = rend.depths || {};
+  const letters = ['A', 'B', 'C'].filter(L => paths[L]);
+  let depths;
+  try {
+    depths = await Promise.all(letters.map(L => getDepths((STATIC ? '' : '/') + paths[L].replace(/^\/+/, ''))));
+  } catch (e) {
+    console.error(e);
+    if (live.stageKey === key) { live.stageKey = null; fallbackLegacy(); }
+    return;
+  }
+  if (live.stageKey !== key) return;
+  const win = rend.window || [0, depths[0].t[depths[0].t.length - 1]];
+  const [lo, hi] = win;
+  const clock = makeClock(lo, hi, 20, true);
+  const site = state.data.site || {};
+  const tiles = {};
+  const box = $('tiles');
+  const mkTile = cls => {
+    const el = document.createElement('div');
+    el.className = 'tile ' + cls;
+    box.appendChild(el);
+    return el;
+  };
+  const realEl = mkTile('real');
+  const vid = document.createElement('video');
+  vid.muted = true; vid.playsInline = true; vid.preload = 'auto';
+  vid.src = assetUrl(`/clips/${rend.event}_cam5.mp4`);
+  vid.addEventListener('loadedmetadata', () => syncVideo(vid, clock.t, true), { once: true });
+  vid.addEventListener('error', () => { realEl.insertAdjacentHTML('beforeend', '<div class="empty quiet">Camera clip not available</div>'); });
+  realEl.appendChild(vid);
+  realEl.insertAdjacentHTML('beforeend', '<div class="tile-label">Real camera</div>');
+  const scene = assetUrl(rend.scene);
+  const imgs = {};
+  letters.forEach((L, i) => {
+    const el = mkTile('cand');
+    el.dataset.letter = L;
+    const t = attachFrame(el);
+    const img = document.createElement('img');
+    img.className = 'fr'; img.alt = '';
+    el.appendChild(img);
+    imgs[L] = img;
+    el.insertAdjacentHTML('beforeend', `<div class="tile-label">${labelHtml(L, describeShort(L, cands || rend.candidates), false)}</div>`);
+    tiles[L] = t;
+    t.load({ scene, patch: rend.patch || {}, depths: depths[i], site, cam: 'cam5' });
+  });
+  live.stage = { key, round: rend.round, tiles, imgs, video: vid, clock, lastDraw: 0, lastSeek: 0, rend, cands: cands || rend.candidates,
+    tilesEl: box, framesOk: false, frames: null, frameT: lo };
+  buildCurves(depths, letters, lo, hi);
+  const sc = $('scrubIn');
+  sc.min = lo; sc.max = hi;
+  fitStage();
+  if (live.view === 'draw') startFrames();
+  if (live.verdictEntry && live.target === 'verdict') markVerdictOnStage();
+}
+
+function fallbackLegacy() {
+  teardownStage();
+  setLayout('legacy');
+  setView('legacy');
+  $('lapseBtn').hidden = true;
+}
+
+/* frames the renderer writes while it works: the tiles fill in as they appear */
+let framesTimer = null;
+function stopFrames() { if (framesTimer) { clearTimeout(framesTimer); framesTimer = null; } }
+
+function startFrames() {
+  stopFrames();
+  if (STATIC) return;
+  const s = live.stage;
+  if (!s) return;
+  const name = s.rend.ma ? 'ma_demo' : encodeURIComponent(state.run + '_cal');
+  const rn = s.rend.ma ? 1 : s.round - (live.ma ? 1 : 0);
+  const loop = async () => {
+    const st = live.stage;
+    if (!st || st !== s) return;
+    try {
+      const r = await getJSON(`/api/frames/${name}/${rn}`);
+      applyFrames(r);
+    } catch (e) { /* not there yet */ }
+    framesTimer = setTimeout(loop, 600);
+  };
+  loop();
+}
+
+function applyFrames(r) {
+  const s = live.stage;
+  if (!s) return;
+  s.frames = r;
+  let t = s.frameT, any = false;
+  for (const L of Object.keys(s.imgs)) {
+    const list = (r.render && r.render[L]) || [];
+    if (!list.length) continue;
+    any = true;
+    const f = list[list.length - 1];
+    if (s.imgs[L].dataset.src !== f.url) { s.imgs[L].dataset.src = f.url; s.imgs[L].src = f.url; }
+    t = Math.max(t, f.t);
+  }
+  if (any) {
+    s.framesOk = true;
+    s.frameT = t;
+    if (live.view === 'draw') s.tilesEl.dataset.mode = 'frames';
+  }
+  if (r.grid && r.grid[0]) $('liveVideo').poster = r.grid[0].url;
+  if (r.video && !live.videoPath) setLiveVideo(r.video);
+}
+
+function paintStage(force) {
+  const s = live.stage;
+  if (!s) return;
+  const framesMode = live.view === 'draw' && s.framesOk;
+  const c = s.clock;
+  const t = framesMode ? s.frameT : c.t;
+  $('clock').textContent = fmt(t);
+  const f = (t - c.lo) / Math.max(1, c.hi - c.lo);
+  $('scrubFill').style.width = `${Math.max(0, Math.min(1, f)) * 100}%`;
+  if (document.activeElement !== $('scrubIn') || force) $('scrubIn').value = t;
+  const now = performance.now();
+  if (!framesMode && (force || now - s.lastDraw > 55)) {
+    for (const tl of Object.values(s.tiles)) tl.draw(t, force);
+    s.lastDraw = now;
+  }
+  if (force || now - s.lastSeek > 140) { syncVideo(s.video, t, force); s.lastSeek = now; }
+}
+
+function liveTick(dt) {
+  if (state.mode !== 'live') return;
+  advance();
+  agentsTick();
+  const s = live.stage;
+  if (live.view === 'watch') {
+    const v = $('liveVideo');
+    if (v.duration) $('playHead').style.left = `${(v.currentTime / v.duration) * 100}%`;
+  }
+  if (!s || (live.phase !== 'running' && live.phase !== 'done')) return;
+  if (live.view === 'draw' && s.framesOk) { paintStage(false); return; }
+  if (live.view !== 'verdict' && live.view !== 'draw') return;
+  if ($('live').dataset.lapse === '1') return;
+  s.clock.advance(dt);
+  paintStage(false);
+}
+
+function setStagePlaying(p) {
+  const s = live.stage;
+  if (!s) return;
+  s.clock.playing = p;
+  $('pauseBtn').textContent = p ? 'Pause' : 'Play';
+}
+
+function jumpLive(sec) {
+  const s = live.stage;
+  if (!s || sec == null || live.view !== 'verdict') return;
+  if ($('live').dataset.lapse === '1') toggleLapse();
+  s.clock.set(sec);
+  setStagePlaying(false);
+  paintStage(true);
+  document.querySelectorAll('#moments li').forEach(li => li.classList.toggle('on', Number(li.dataset.sec) === sec));
+}
+
+function toggleLapse() {
+  const on = $('live').dataset.lapse !== '1';
+  $('live').dataset.lapse = on ? '1' : '0';
+  $('lapseBtn').textContent = on ? 'Show the 3D views' : 'Show what Argon sees';
+  const v = $('liveVideo');
+  if (on) { v.playbackRate = 4; v.play().catch(() => {}); } else v.pause();
+  if (!on) paintStage(true);
+}
+
+function markVerdictOnStage() {
+  const s = live.stage, w = live.verdictEntry && live.verdictEntry.winner;
+  if (!s || !w) return;
+  for (const [L, t] of Object.entries(s.tiles)) {
+    t.el.classList.toggle('win', L === w);
+    t.el.classList.toggle('dim', L !== w);
+    t.el.querySelector('.tile-label').innerHTML = labelHtml(L, describeShort(L, s.cands), L === w);
+  }
+  const win = s.clock.hi - s.clock.lo;
+  const ticks = $('scrubTicks');
+  ticks.innerHTML = '';
+  for (const m of live.moments) {
+    if (m.sec == null) continue;
+    const d = document.createElement('div');
+    d.className = 'stick';
+    d.style.left = `${((m.sec - s.clock.lo) / win) * 100}%`;
+    ticks.appendChild(d);
+  }
+}
+
+function showVerdict(entry, cands) {
+  const w = entry.winner;
+  $('winLetter').textContent = w;
+  $('winWhat').textContent = describe(w, cands);
+  const rem = (entry.text || '').replace(/^Round \d+: Argon picked [ABC]\.?\s*/, '');
+  $('remaining').textContent = rem ? `Still off: ${clean(rem)}` : '';
+  $('remaining').hidden = !rem;
+  const ul = $('moments');
+  ul.innerHTML = '';
+  live.moments = [];
+  for (const m of entry.moments || []) {
+    const sec = clockSeconds(m.label);
+    live.moments.push({ sec });
+    const li = document.createElement('li');
+    li.dataset.sec = sec == null ? '' : sec;
+    li.innerHTML = '<span class="mt"></span><span class="pick"></span><span class="ev"></span>';
+    li.querySelector('.mt').textContent = m.label || '';
+    const b = m.verdict;
+    const pk = li.querySelector('.pick');
+    pk.textContent = b === 'tie' ? 'Tie' : b;
+    if (b === w) pk.classList.add('win');
+    li.querySelector('.ev').textContent = clean(m.evidence);
+    li.onclick = () => jumpLive(sec);
+    ul.appendChild(li);
+  }
+  $('sideHint').hidden = true;
+  $('verdict').hidden = false;
+  live.verdictShown = true;
+  markVerdictOnStage();
+  updateTrained();
+}
+
+function updateTrained() {
+  const show = live.view === 'verdict' && live.finished && !live.testing;
+  $('trained').hidden = !show;
+  if (!show) return;
+  if (!live.trainedShown) { live.trainedShown = true; $('sideCol').scrollTop = 0; }
+  const done = live.doneEntry || {};
+  const first = live.firstCands && live.firstCands.A;
+  const ul = $('changes');
+  ul.innerHTML = '';
+  if (first && done.params) {
+    for (const k of Object.keys(done.params)) {
+      if (done.params[k] === first[k] || k === 'basement_path') continue;
+      const li = document.createElement('li');
+      li.innerHTML = '<span class="k"></span><span class="from"></span> to <span class="to"></span>';
+      li.querySelector('.k').textContent = knobName(k);
+      li.querySelector('.from').textContent = typeof first[k] === 'number' ? num3(first[k]) : fmtVal(first[k]);
+      li.querySelector('.to').textContent = typeof done.params[k] === 'number' ? num3(done.params[k]) : fmtVal(done.params[k]);
+      ul.appendChild(li);
+    }
+  }
+  if (!ul.children.length) ul.innerHTML = '<li class="quiet">No setting changed</li>';
+  setLiveState('done');
+  stopTimer();
+}
+
+function renderLive(r) {
+  live.replay = !!r.replay;
+  if (STATIC) {
+    $('modeBadge').textContent = 'Recorded';
+    $('runNote').textContent = RECORDED_LABEL;
+    $('staticLabel').hidden = false;
+  } else {
+    $('modeBadge').textContent = live.replay ? 'Offline replay' : 'Live';
+    $('runNote').textContent = live.replay ? 'Replays recorded answers, no network needed' : 'Two rounds, about two minutes';
+  }
+  if (!r.started_here) return;
+  // A page opened fresh shows the start button. It only picks up a round that is still running.
+  if (!live.active) { if (!r.running) return; live.active = true; }
+  if (live.expect && r.started !== live.expect) return;
+  const p = r.progress;
+  const log = (p && p.log) || [];
+  const cur = p && p.current;
+  if (r.running) {
+    if (live.phase !== 'running' && !live.finished) startTimer(r.elapsed);
+    live.elapsed = r.elapsed;
+  } else {
+    live.elapsed = r.elapsed;
+  }
+  const rounds = log.filter(e => e.round > 0).map(e => e.round);
+  const Rlatest = rounds.length ? Math.max(...rounds) : 0;
+  // a new round starts only after the last one has shown its pick for a few seconds
+  const uniq = [...new Set(rounds)].sort((x, y) => x - y);
+  const nextR = live.viewRound === null || live.viewRound === 0 ? uniq[0] : uniq.find(r => r > live.viewRound);
+  if (nextR !== undefined && nextR !== live.viewRound) {
+    const free = live.viewRound === null || live.viewRound === 0
+      || (live.view === 'verdict' && performance.now() - live.viewAt >= 5500)
+      || (live.viewMa && live.view === 'agents' && performance.now() - live.viewAt >= dwellOf('agents'));
+    if (free) {
+      teardownStage();
+      live.viewRound = nextR;
+      live.verdictEntry = null;
+      live.verdictShown = false;
+      live.agentsData = null;
+      live.viewMa = inRma(log, nextR);
+      setView(live.viewMa ? 'agents' : 'sim');
+    }
+  }
+  const R = live.viewRound ?? 0;
+  const lastRound = R === Rlatest;
+  const of = Math.max(2, Rlatest);
+  live.ma = log.some(e => e.ma);
+  const isMa = inRma(log, R);
+  $('roundTag').textContent = isMa ? 'Managed Agents' : (R ? `Round ${R - (live.ma ? 1 : 0)} of 4` : '');
+  const inR = log.filter(e => e.round === R);
+  const vidEntry = lastWith(inR, e => e.video);
+  const rend = lastWith(inR, e => e.stage === 'render' && e.depths && e.scene);
+  const simR = lastWith(inR, e => e.stage === 'simulate' && e.candidates);
+  const cands = (rend && rend.candidates) || (simR && simR.candidates);
+  const firstSim = log.find(e => e.stage === 'simulate' && e.candidates);
+  live.firstCands = firstSim && firstSim.candidates;
+  const verdictR = lastWith(inR, e => e.stage === 'verdict');
+  const doneEntry = lastWith(log, e => e.stage === 'done');
+  const anyDone = (p && log.some(e => e.stage === 'done'));
+  live.doneEntry = doneEntry;
+  live.finished = !r.running && lastRound && (anyDone ? !!doneEntry : !!verdictR) && !!verdictR;
+  if (cands) {
+    $('legendCands').innerHTML = '';
+    for (const L of ['A', 'B', 'C']) {
+      const sp = document.createElement('span');
+      sp.innerHTML = '<b></b><span></span>';
+      sp.querySelector('b').textContent = L;
+      sp.querySelector('span').textContent = describe(L, cands);
+      $('legendCands').appendChild(sp);
+    }
+  }
+  const failed = (cur && cur.stage === 'error') || (!r.running && !verdictR && r.exit_code != null);
+  if (failed) {
+    showError(cur && cur.stage === 'error' ? cur.text : null, r.log_tail);
+    return;
+  }
+  {
+    if (vidEntry) setLiveVideo(vidEntry.video);
+    if (rend) buildStage(rend, cands).catch(e => { console.error(e); fallbackLegacy(); });
+    else if (vidEntry && !live.stageKey && live.layout !== 'legacy' && !STATIC) { /* renderer data comes with the render entry */ }
+    else if (vidEntry && !live.stageKey && STATIC && live.layout !== 'legacy' && log.every(e => e.stage !== 'render' || !e.depths)) fallbackLegacy();
+    live.cands = cands;
+    if (verdictR) live.verdictEntry = verdictR;
+    const agEntry = lastWith(inR, e => e.stage === 'agents');
+    if (agEntry) { live.agentsData = agEntry.workers || null; }
+    live.target = verdictR ? 'verdict' : lastWith(inR, e => e.stage === 'watching') ? 'watch'
+      : lastWith(inR, e => e.stage === 'upload') ? 'send' : rend ? 'draw' : (simR || !agEntry) ? 'sim' : 'agents';
+    if (agEntry && !simR && !rend && live.viewMa === undefined) live.viewMa = true;
+    if (rend && live.view === 'sim' && live.target !== 'sim') { /* advance() takes it from here */ }
+    if (live.layout === 'legacy' && verdictR && !live.verdictShown) {
+      showVerdict(verdictR, cands);
+      $('caption').textContent = `Argon picked ${verdictR.winner}.`;
+      setLiveState('done');
+      stopTimer();
+    } else if (live.layout === 'legacy') {
+      $('caption').textContent = cur ? clean(cur.text) : '';
+    }
+  }
+  if (live.phase === 'idle') setLiveState('running');
+  if (live.view === 'verdict') updateTrained();
+}
+
+function startTimer(from) {
+  live.startedLocal = performance.now() - (from || 0) * 1000;
+  stopTimer();
+  live.timer = setInterval(() => {
+    $('elapsed').textContent = fmt((performance.now() - live.startedLocal) / 1000);
+  }, 500);
+}
+
+function stopTimer() {
+  if (live.timer) clearInterval(live.timer);
+  live.timer = null;
+}
+
+async function pollLive() {
+  if (STATIC) {
+    // No server to poll. Load the recorded round once and wait for the button.
+    try { replay.prog = (await getJSON(`/api/progress/${encodeURIComponent(state.run)}`)).progress; } catch (e) { replay.prog = null; }
+    renderLive({ replay: false, started_here: false });
+    return;
+  }
+  try {
+    const r = await getJSON(`/api/progress/${encodeURIComponent(state.run + '_cal')}`);
+    renderLive(r);
+    live.ready = true;
+  } catch (e) { /* server busy */ }
+  const busy = live.phase === 'running';
+  setTimeout(pollLive, busy ? 600 : 2500);
+}
+
+/* Static mode: play the recorded log back with its original timings. Each log entry carries `at`, seconds from the round start. */
+const replay = { prog: null, timer: null };
+
+function startStaticRound() {
+  const prog = replay.prog;
+  if (!prog || !(prog.log || []).length) { showError('The recorded round is not available.', []); return; }
+  if (replay.timer) clearInterval(replay.timer);
+  const t0 = performance.now();
+  const hasDone = prog.log.some(e => e.stage === 'done');
+  const step = () => {
+    const el = (performance.now() - t0) / 1000;
+    const log = prog.log.filter(e => (e.at || 0) <= el);
+    const done = hasDone ? log.some(e => e.stage === 'done') : log.some(e => e.stage === 'verdict');
+    renderLive({
+      replay: false, started_here: true, running: !done, started: 'static', elapsed: el,
+      exit_code: done ? 0 : null, progress: { log, current: log[log.length - 1] || null },
+    });
+    if (done) { clearInterval(replay.timer); replay.timer = null; }
+  };
+  replay.timer = setInterval(step, 250);
+  step();
+}
+
+async function startRound() {
+  teardownStage();
+  live.videoPath = null; live.verdictShown = false; live.verdictEntry = null; live.moments = []; live.finished = false; live.testing = false; live.trainedShown = false; live.ma = false; live.agentsData = null; live.viewMa = undefined;
+  live.elapsed = 0; live.expect = null; live.active = true; live.viewRound = null; live.view = null; live.target = 'sim';
+  setLayout('stage');
+  $('liveVideo').removeAttribute('src');
+  $('liveVideo').removeAttribute('poster');
+  $('live').dataset.vid = '0';
+  $('lapseBtn').hidden = true;
+  $('legendCands').innerHTML = '';
+  $('verdict').hidden = true;
+  $('trained').hidden = true;
+  $('testing').hidden = true;
+  $('sideHint').hidden = false;
+  $('clock').textContent = '00:00';
+  $('scrubFill').style.width = '0';
+  $('roundTag').textContent = '';
+  $('elapsed').textContent = '00:00';
+  setView('sim');
+  setLiveState('running');
+  startTimer(0);
+  if (STATIC) { startStaticRound(); return; }
+  try {
+    const res = await fetch(`/api/calibrate/${encodeURIComponent(state.run)}`, { method: 'POST' });
+    if (res.ok) live.expect = (await res.json()).started_at;
+    else {
+      let detail = res.statusText;
+      try { detail = (await res.json()).detail || detail; } catch (e) { /* not JSON */ }
+      showError(detail, []);
+    }
+  } catch (e) {
+    showError('Could not reach the demo server.', []);
+  }
+}
+
+/* The test uses the model the full run froze. One quiet line, then the proving screen. */
+async function runTest(lineEl, hideEls) {
+  live.testing = true;
+  for (const el of hideEls) el.hidden = true;
+  const n = state.data && state.data.rounds ? state.data.rounds.length : 6;
+  lineEl.textContent = `Testing the model from the full run (${n} rounds, same method)`;
+  lineEl.hidden = false;
+  const wait = new Promise(r => setTimeout(r, 3200));
+  let ok = true;
+  if (!STATIC) {
+    try { ok = (await fetch(`/api/test/${encodeURIComponent(state.run)}`, { method: 'POST' })).ok; } catch (e) { ok = false; }
+  }
+  await wait;
+  live.testing = false;
+  if (!ok) { lineEl.textContent = 'No held-out prediction is saved for this run yet.'; return; }
+  setMode('reveal');
+  lineEl.hidden = true;
+  for (const el of hideEls) el.hidden = false;
+}
+
+function useRecorded() {
+  $('runCard').classList.add('rec');
+  $('leadRec').hidden = false;
+  $('testRecBtn').hidden = false;
+}
+
+function wireLive() {
+  $('runBtn').onclick = startRound;
+  $('againBtn').onclick = startRound;
+  $('retryBtn').onclick = startRound;
+  $('recLink').onclick = useRecorded;
+  $('testRecBtn').onclick = () => runTest($('recNote'), [$('testRecBtn')]);
+  $('testBtn').onclick = () => { $('trained').hidden = true; runTest($('testing'), []).then(() => { $('trained').hidden = false; }); };
+  $('pauseBtn').onclick = () => setStagePlaying(!(live.stage && live.stage.clock.playing));
+  $('lapseBtn').onclick = toggleLapse;
+  $('scrubIn').addEventListener('input', () => {
+    if (!live.stage) return;
+    live.stage.clock.set(Number($('scrubIn').value));
+    setStagePlaying(false);
+    paintStage(true);
+  });
+  $('liveVideo').addEventListener('error', () => { if ($('liveVideo').getAttribute('src')) $('liveVideoErr').hidden = false; });
+  new ResizeObserver(fitStage).observe($('stageWrap'));
+}
+
+
+/* ---------- Managed Agents ---------- */
+
+function inRma(log, R) { return log.some(e => e.round === R && e.ma); }
+
+const AG_ORDER = ['sewer', 'door', 'both'];
+function startAgents() {
+  live.agentsStart = performance.now();
+  for (const h of AG_ORDER) {
+    const el = document.querySelector(`.ag[data-h="${h}"]`);
+    el.className = 'ag working'; delete el.dataset.done;
+    el.querySelector('.ag-body').innerHTML = '';
+    el.querySelector('.ag-time').textContent = '00:00';
+  }
+}
+
+function firstSentence(t, n) {
+  t = clean(t || '').replace(/\s+/g, ' ').trim();
+  const m = /^(.{40,}?[.!?])\s/.exec(t);
+  let x = m ? m[1] : t;
+  if (x.length > n) x = x.slice(0, n).replace(/\s+\S*$/, '') + '...';
+  return x;
+}
+
+function agentsTick() {
+  if (live.view !== 'agents') return;
+  const data = live.agentsData;
+  const el0 = (performance.now() - live.agentsStart) / 1000;
+  const FAST = 6; // seconds the slowest replayed agent takes to count up to its real time
+  const maxWall = data ? Math.max(...AG_ORDER.map(h => (data[h] && data[h].wall_seconds) || 0), 1) : 1;
+  for (const h of AG_ORDER) {
+    const el = document.querySelector(`.ag[data-h="${h}"]`);
+    const w = data && data[h];
+    const time = el.querySelector('.ag-time');
+    if (!w) { // no result yet: a plain running timer
+      const done = live.target !== 'agents';
+      time.textContent = fmt(el0);
+      el.classList.toggle('working', !done);
+      if (done && !el.querySelector('.ag-body').textContent) el.querySelector('.ag-body').innerHTML = '<div class="big">Finished</div>';
+      continue;
+    }
+    const wall = w.wall_seconds || 60;
+    const shown = Math.min(wall, el0 * (maxWall / FAST));
+    time.textContent = fmt(shown);
+    const finished = shown >= wall - 0.01;
+    el.classList.toggle('working', !finished);
+    if (finished && !el.dataset.done) {
+      el.dataset.done = '1';
+      const body = el.querySelector('.ag-body');
+      if (!w.used) {
+        el.classList.add('out');
+        body.innerHTML = '<div class="big">Did not finish, left out</div>';
+      } else {
+        const k = w.best_knobs || {};
+        const set = Object.keys(k).map(x => `${knobName(x)} ${num3(k[x])}`).join(', ');
+        const tok = w.tokens ? ` · ${Math.round(w.tokens / 1000)}k tokens` : '';
+        body.innerHTML = `<div class="big">${w.runs ?? w.n_cal_runs_logged ?? 0} simulation runs</div>`
+          + `<div class="set">Best settings: ${set}</div>`
+          + `<div class="quiet set">${fmt(wall)}${tok}</div>`
+          + `<div class="ex"></div>`;
+        body.querySelector('.ex').textContent = firstSentence(w.report, 170);
+      }
+    }
+  }
+}
 /* ---------- boot ---------- */
 
 async function loadRun() {
@@ -578,15 +1491,13 @@ function wire() {
     document.querySelectorAll('.speeds button').forEach(x => x.classList.toggle('on', x === b));
   });
   document.querySelectorAll('.cams button').forEach(b => b.onclick = () => setCam(b.dataset.cam));
-  document.querySelectorAll('#predToggle button').forEach(b => b.onclick = () => {
-    state.pred = b.dataset.pred;
-    document.querySelectorAll('#predToggle button').forEach(x => x.classList.toggle('on', x === b));
-    applyView();
-  });
   $('modeLive').onclick = () => setMode('live');
   $('modeCalib').onclick = () => setMode('calib');
   $('modeReveal').onclick = () => setMode('reveal');
   $('revealBtn').onclick = doReveal;
+  $('rvPlay').onclick = () => { if (!rv.clock) return; rv.clock.playing = !rv.clock.playing; paintReveal(false); };
+  $('rvSlider').addEventListener('input', () => revealSeek(Number($('rvSlider').value)));
+  document.querySelectorAll('#rvToggle button').forEach(x => x.onclick = () => setWhich(x.dataset.w));
   $('contactBtn').onclick = () => {
     const r = state.data.rounds[state.roundIdx];
     $('overlayVid').hidden = true; $('overlayVid').pause();
@@ -605,7 +1516,12 @@ function wire() {
   video.addEventListener('error', () => { $('videoEmpty').hidden = false; $('videoEmpty').textContent = 'Clip could not be played'; });
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
-    if (e.key === ' ') { e.preventDefault(); setPlaying(!state.playing); }
+    if (e.key === ' ') {
+      e.preventDefault();
+      if (state.mode === 'live') setStagePlaying(!(live.stage && live.stage.clock.playing));
+      else if (state.mode === 'reveal') $('rvPlay').onclick();
+      else setPlaying(!state.playing);
+    }
     else if (e.key === 'ArrowRight' && state.mode === 'calib') selectRound(state.roundIdx + 1);
     else if (e.key === 'ArrowLeft' && state.mode === 'calib') selectRound(state.roundIdx - 1);
     else if (e.key === 'c') setCam(state.cam === 'cam1' ? 'cam5' : 'cam1');
@@ -617,257 +1533,6 @@ function wire() {
   new ResizeObserver(() => { if (state.mode === 'reveal') drawChart(); }).observe($('chartWrap'));
 }
 
-/* ---------- live round ---------- */
-
-const STEPS = { simulate: 0, render: 1, video: 1, upload: 2, watching: 3, verdict: 4, done: 4 };
-const live = {
-  phase: 'idle', startedLocal: 0, elapsed: 0, timer: null, videoPath: null, videoSeenAt: 0,
-  verdictShown: false, lastErr: null, replay: false, ready: true, polling: false,
-};
-
-function setLiveState(st) {
-  live.phase = st;
-  $('live').dataset.state = st;
-}
-
-function railShow(done, now) {
-  document.querySelectorAll('#rail li').forEach(li => {
-    const i = Number(li.dataset.step);
-    li.classList.toggle('done', i < now || done);
-    li.classList.toggle('now', !done && i === now);
-  });
-}
-
-function describe(label, cands) {
-  if (!cands || !cands[label]) return '';
-  if (label === 'A') return 'current settings';
-  const a = cands.A || {}, c = cands[label];
-  const diffs = Object.keys(c).filter(k => c[k] !== a[k]);
-  if (!diffs.length) return 'same settings';
-  if (diffs.length === 1 && diffs[0] === 'basement_path') return `water comes in by the ${c.basement_path}`;
-  return diffs.map(k => {
-    const x = a[k], y = c[k];
-    if (typeof x === 'number' && typeof y === 'number') return `${k.replace(/_/g, ' ')} ${y < x ? 'lower' : 'higher'} (${fmtVal(y)})`;
-    return `${k.replace(/_/g, ' ')} ${fmtVal(y)}`;
-  }).join(', ');
-}
-
-function lastWith(log, pred) {
-  for (let i = log.length - 1; i >= 0; i--) if (pred(log[i])) return log[i];
-  return null;
-}
-
-function setLiveVideo(path) {
-  if (!path || path === live.videoPath) return;
-  live.videoPath = path;
-  live.videoSeenAt = performance.now();
-  const v = $('liveVideo');
-  $('liveVideoErr').hidden = true;
-  v.src = STATIC ? path : `/api/video?path=${encodeURIComponent(path)}`;
-  v.playbackRate = 2;
-  v.play().catch(() => {});
-  $('live').dataset.vid = '1';
-}
-
-function friendlyError(msg, tail) {
-  const all = (tail || []).join('\n') + ' ' + (msg || '');
-  if (/no recorded answer|CacheMiss|ARGON_CACHE=replay/.test(all)) {
-    return 'Offline replay has no recorded answer for this round. Restart with ./demo (no --replay) to call Argon live.';
-  }
-  return msg || 'The round stopped before Argon gave a verdict.';
-}
-
-function showError(msg, tail) {
-  setLiveState('error');
-  stopTimer();
-  $('errText').textContent = friendlyError(msg, tail);
-  $('errLog').textContent = (tail || []).slice(-8).join('\n');
-  $('errLog').hidden = !(tail && tail.length);
-}
-
-const clean = t => String(t || '').replace(/\s*[\u2014\u2013]\s*/g, ', ');
-
-function showVerdict(entry, cands) {
-  const w = entry.winner;
-  $('winLetter').textContent = w;
-  $('winLetter').className = 'win-badge ' + w;
-  $('winWhat').textContent = describe(w, cands);
-  const rem = (entry.text || '').replace(/^Round \d+: Argon picked [ABC]\.?\s*/, '');
-  $('remaining').textContent = rem ? `Still off: ${clean(rem)}` : '';
-  $('remaining').hidden = !rem;
-  const ul = $('moments');
-  ul.innerHTML = '';
-  for (const m of entry.moments || []) {
-    const li = document.createElement('li');
-    li.innerHTML = '<span class="mt"></span><span class="pick"></span><span class="ev"></span>';
-    li.querySelector('.mt').textContent = m.label || '';
-    const b = m.verdict;
-    li.querySelector('.pick').textContent = b === 'tie' ? 'tie' : `best ${b}`;
-    li.querySelector('.pick').classList.add(b === 'tie' ? 'tie' : b);
-    li.querySelector('.ev').textContent = clean(m.evidence);
-    ul.appendChild(li);
-  }
-  $('stageText').textContent = `Argon picked ${w}.`;
-  railShow(true, 5);
-  setLiveState('done');
-  live.verdictShown = true;
-}
-
-function renderLive(r) {
-  live.replay = !!r.replay;
-  if (STATIC) {
-    $('modeBadge').textContent = 'Recorded';
-    $('modeBadge').classList.add('replay');
-    $('modeBadge').classList.remove('live');
-    $('runNote').textContent = RECORDED_LABEL;
-    $('staticLabel').hidden = false;
-  } else {
-    $('modeBadge').textContent = live.replay ? 'Offline replay' : 'Live';
-    $('modeBadge').classList.toggle('replay', live.replay);
-    $('modeBadge').classList.toggle('live', !live.replay);
-    $('runNote').textContent = live.replay ? 'Replays a recorded answer, no network needed' : `Run ${state.run}, about a minute`;
-  }
-  if (!r.started_here) return;
-  // A page opened fresh shows the start button. It only picks up a round that is still running.
-  if (!live.active) { if (!r.running) return; live.active = true; live.sawRunning = false; }
-  if (live.expect && r.started !== live.expect) return;
-  const p = r.progress;
-  const log = (p && p.log) || [];
-  const cur = p && p.current;
-  if (r.running) {
-    if (live.phase !== 'running' && !live.verdictShown) startTimer(r.elapsed);
-    live.elapsed = r.elapsed;
-  } else {
-    live.elapsed = r.elapsed;
-  }
-  const vidEntry = lastWith(log, e => e.video);
-  if (vidEntry) setLiveVideo(vidEntry.video);
-  const sim = lastWith(log, e => e.stage === 'simulate' && e.candidates);
-  const cands = sim && sim.candidates;
-  if (cands) {
-    $('legendCands').innerHTML = '';
-    for (const L of ['A', 'B', 'C']) {
-      const sp = document.createElement('span');
-      sp.innerHTML = '<b></b><span></span>';
-      sp.querySelector('b').textContent = L;
-      sp.querySelector('span').textContent = describe(L, cands);
-      $('legendCands').appendChild(sp);
-    }
-  }
-  const verdict = lastWith(log, e => e.stage === 'verdict');
-  const failed = (cur && cur.stage === 'error') || (!r.running && !verdict && r.exit_code != null);
-  if (failed) {
-    showError(cur && cur.stage === 'error' ? cur.text : null, r.log_tail);
-    return;
-  }
-  if (verdict) {
-    // In offline replay the answer arrives at once. Hold it back until the video has played about once, so the room can watch.
-    const dur = $('liveVideo').duration;
-    const hold = live.replay && live.sawRunning && live.videoSeenAt ? Math.min(12, isFinite(dur) ? dur / 2 : 8) * 1000 : 0;
-    const waited = live.videoSeenAt ? performance.now() - live.videoSeenAt : hold;
-    if (waited >= hold) {
-      if (!live.verdictShown) { showVerdict(verdict, cands); stopTimer(); }
-      return;
-    }
-  }
-  if (live.verdictShown) return;
-  setLiveState('running');
-  live.sawRunning = true;
-  const shown = verdict ? 'watching' : (cur ? cur.stage : 'simulate');
-  const step = STEPS[shown] ?? 0;
-  railShow(false, step);
-  $('stageText').textContent = verdict ? (log.length ? 'Argon is watching the video' : '') : (cur ? cur.text : 'Starting');
-}
-
-function startTimer(from) {
-  live.startedLocal = performance.now() - (from || 0) * 1000;
-  stopTimer();
-  live.timer = setInterval(() => {
-    if (live.phase !== 'running') return;
-    $('elapsed').innerHTML = `Elapsed <b>${Math.floor((performance.now() - live.startedLocal) / 1000)}</b> seconds`;
-  }, 250);
-}
-
-function stopTimer() {
-  if (live.timer && live.phase === 'done') live.elapsed = (performance.now() - live.startedLocal) / 1000;
-  if (live.timer) clearInterval(live.timer);
-  live.timer = null;
-  if (live.phase === 'done' || live.phase === 'error') {
-    $('elapsed').innerHTML = `Took <b>${Math.round(live.elapsed || 0)}</b> seconds`;
-  }
-}
-
-async function pollLive() {
-  if (STATIC) {
-    // No server to poll. Load the recorded round once and wait for the button.
-    try { replay.prog = (await getJSON(`/api/progress/${encodeURIComponent(state.run)}`)).progress; } catch (e) { replay.prog = null; }
-    renderLive({ replay: false, started_here: false });
-    return;
-  }
-  try {
-    const r = await getJSON(`/api/progress/${encodeURIComponent(state.run)}`);
-    renderLive(r);
-    live.ready = true;
-  } catch (e) { /* server busy */ }
-  const busy = live.phase === 'running';
-  setTimeout(pollLive, busy ? 700 : 3000);
-}
-
-/* Static mode: play the recorded log back with its original timings. Each log entry carries `at`, seconds from the round start. */
-const replay = { prog: null, timer: null };
-
-function startStaticRound() {
-  const prog = replay.prog;
-  if (!prog || !(prog.log || []).length) { showError('The recorded round is not available.', []); return; }
-  if (replay.timer) clearInterval(replay.timer);
-  const t0 = performance.now();
-  const step = () => {
-    const el = (performance.now() - t0) / 1000;
-    const log = prog.log.filter(e => (e.at || 0) <= el);
-    const done = log.some(e => e.stage === 'verdict');
-    renderLive({
-      replay: false, started_here: true, running: !done, started: 'static', elapsed: el,
-      exit_code: done ? 0 : null, progress: { log, current: log[log.length - 1] || null },
-    });
-    if (done) { clearInterval(replay.timer); replay.timer = null; }
-  };
-  replay.timer = setInterval(step, 250);
-  step();
-}
-
-async function startRound() {
-  live.videoPath = null; live.videoSeenAt = 0; live.verdictShown = false; live.elapsed = 0; live.expect = null; live.sawRunning = true; live.active = true;
-  $('liveVideo').removeAttribute('src');
-  $('live').dataset.vid = '0';
-  $('legendCands').innerHTML = '';
-  $('stageText').textContent = 'Starting the round';
-  $('elapsed').innerHTML = 'Elapsed <b>0</b> seconds';
-  railShow(false, 0);
-  setLiveState('running');
-  startTimer(0);
-  if (STATIC) { startStaticRound(); return; }
-  try {
-    const res = await fetch(`/api/live/${encodeURIComponent(state.run)}`, { method: 'POST' });
-    if (res.ok) live.expect = (await res.json()).started_at;
-    else {
-      let detail = res.statusText;
-      try { detail = (await res.json()).detail || detail; } catch (e) { /* not JSON */ }
-      showError(detail, []);
-    }
-  } catch (e) {
-    showError('Could not reach the demo server.', []);
-  }
-}
-
-function wireLive() {
-  $('runBtn').onclick = startRound;
-  $('againBtn').onclick = startRound;
-  $('retryBtn').onclick = startRound;
-  $('revealGo').onclick = () => setMode('reveal');
-  $('liveVideo').addEventListener('loadedmetadata', () => { $('liveVideo').playbackRate = 2; });
-  $('liveVideo').addEventListener('play', () => { $('liveVideo').playbackRate = 2; });
-  $('liveVideo').addEventListener('error', () => { if ($('liveVideo').getAttribute('src')) $('liveVideoErr').hidden = false; });
-}
 
 async function boot() {
   if (!RUN_PARAM) {
@@ -882,12 +1547,12 @@ async function boot() {
   pollLive();
 }
 
-window.demo = { state, live, setT, setMode, selectRound, setCam, doReveal, startRound };
+window.demo = { state, live, rv, setT, setMode, selectRound, setCam, doReveal, startRound, jumpLive };
 
 document.body.dataset.mode = 'live';
 wire();
 wireLive();
-railShow(false, -1);
+stepsShow(-1);
 fitHarness();
 requestAnimationFrame(tick);
 boot();

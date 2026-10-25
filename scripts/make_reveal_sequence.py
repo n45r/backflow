@@ -66,7 +66,7 @@ def main(run="calib_video", out_name="reveal_seq.mp4"):
             dr.text((x, top + ph + 14), label, fill=col, font=f26)
         dr.text((cx1 - 90, top + ph + 14), f"{int(t_now) // 60}:{int(t_now) % 60:02d}", fill=QUIET, font=f26)
         dr.line([(cx0, cy1), (cx1, cy1)], fill=LINE, width=2)
-        dr.text((cx0, cy0 - 50), "Water depth in the basement", fill=QUIET, font=f26)
+        dr.text((cx0, cy0 - 50), "Water depth", fill=QUIET, font=f26)
         n = max(2, sum(1 for t in t_rev if t <= t_now))
         for series, col in ((before, BEFORE), (after, AFTER)):
             dr.line([px(t_rev[j], series[j]) for j in range(n)], fill=col, width=4)

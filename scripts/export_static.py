@@ -44,6 +44,8 @@ def rel_url(value):
         return None
     if value.startswith("/") and value[1:].startswith(STATIC_PREFIXES):
         return value[1:]
+    if value.startswith("runs/") and value.endswith(".json") and (ROOT / value).is_file():
+        return value  # a path written relative to the repo root, such as the depths of a live round
     if value.startswith(str(ROOT) + "/"):
         u = server._url(value)
         return u[1:] if u else None
@@ -150,6 +152,14 @@ def build(name, site):
     else:
         prog = progress_from_round(summary)
         source = "last calibration round"
+    # the Managed Agents cards come first, from the recorded run, then the rounds after them
+    ag = server.agents_entry()
+    if prog and ag:
+        order = sorted({e["round"] for e in prog["log"] if e.get("round")})
+        renum = {r: i + 2 for i, r in enumerate(order)}
+        shifted = [dict(e, round=renum[e["round"]]) if e.get("round") else dict(e) for e in prog["log"] if e.get("round") != 0]
+        log = [ag] + shifted
+        prog = {"current": log[-1], "log": log}
     out = {"name": name, "running": False, "started_here": False, "started": None, "progress": prog, "replay": False}
     write_json(site, f"api/progress/{name}.json", rewrite(out, used))
     print(f"replay source: {source}")

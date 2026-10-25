@@ -50,7 +50,7 @@ def frame_curves(depths, t, frac):
         d.line(pts, fill=COLORS[L], width=4)
         d.text((pts[-1][0] + 10, pts[-1][1] - 18), L, fill=COLORS[L], font=_font(30))
     d.line([(x0, y1), (x1, y1)], fill=(40, 40, 44), width=1)
-    caption(d, "The drainage simulation runs three versions, A, B and C: how deep the basement water gets over time")
+    caption(d, "The drainage simulation runs three versions, A, B and C: how deep the water gets over time")
     return im
 
 

@@ -11,8 +11,8 @@
 <div id="app">
   <header id="top">
     <div class="brand">Backflow</div>
-    <div class="run" id="runName"></div>
-    <div class="badge fixture" id="fixtureBadge" hidden>FIXTURE DATA</div>
+    <div class="run quiet" id="runName"></div>
+    <div class="run quiet" id="fixtureBadge" hidden>Fixture data</div>
     <nav class="modes">
       <button id="modeLive" class="mode active">Live round</button>
       <button id="modeCalib" class="mode">How we got here</button>
@@ -20,89 +20,125 @@
     </nav>
   </header>
 
-  <section id="live" data-state="idle" data-vid="0">
-    <div id="watchCard">
-      <h2>What Argon is watching</h2>
-      <div class="vidbox">
-        <video id="liveVideo" muted loop playsinline autoplay></video>
-        <div class="empty" id="liveVideoErr" hidden>The video could not be played here</div>
+  <section id="live" data-state="idle" data-layout="stage" data-vid="0" data-tiles="0" data-lapse="0">
+    <div id="runCard">
+      <p class="lead" id="leadIdle">Argon watches a real flood next to three versions of the model, picks the one that matches, and corrects the model. Then we test it on a flood it has never seen.</p>
+      <p class="lead" id="leadRec" hidden>The recorded calibration is loaded. Test it on a flood it has never seen.</p>
+      <div class="idle-actions">
+        <button id="runBtn" class="primary big">Calibrate live</button>
+        <button id="testRecBtn" class="primary big" hidden>Test on a flood it has never seen</button>
+        <button id="recLink" class="text">Use the full recorded run</button>
       </div>
-      <div id="legend">
-        <div class="lg-line"><b>Top left</b> is the real camera. <b>A, B and C</b> are three versions of the model, drawn from the same view. Playing at 2x.</div>
-        <div id="legendCands"></div>
-      </div>
+      <div class="run-note quiet"><span id="modeBadge">Live</span><span id="runNote"></span></div>
+      <p id="recNote" class="quiet" hidden></p>
     </div>
 
-    <div id="liveSide">
-      <div id="runCard">
-        <p class="lead">Argon watches a time-lapse of a real flood next to three versions of the model, then picks the version that matches best.</p>
-        <button id="runBtn" class="run-btn">Run a live round with Argon</button>
-        <div class="run-note"><span class="badge" id="modeBadge">Live</span><span id="runNote"></span></div>
-      </div>
-
-      <div id="statusCard">
-        <ol id="rail">
-          <li data-step="0"><i>1</i><span>Simulate</span></li>
-          <li data-step="1"><i>2</i><span>Draw in 3D</span></li>
-          <li data-step="2"><i>3</i><span>Send video</span></li>
-          <li data-step="3"><i>4</i><span>Argon watching</span></li>
-          <li data-step="4"><i>5</i><span>Verdict</span></li>
+    <div id="runView">
+      <div id="runHead">
+        <div id="roundTag">Round 1 of 2</div>
+        <ol id="steps">
+          <li data-step="0" id="stepAgents" hidden>Agents</li>
+          <li data-step="1">Simulate</li>
+          <li data-step="2">Draw</li>
+          <li data-step="3">Send</li>
+          <li data-step="4">Watching</li>
+          <li data-step="5">Verdict</li>
         </ol>
-        <div id="staticLabel" class="static-label" hidden>Recorded run, replayed in your browser</div>
-        <div id="stageText"></div>
-        <div id="elapsed"></div>
+        <div id="staticLabel" class="quiet" hidden>Recorded run, replayed in your browser</div>
+        <div id="elapsed" class="quiet"></div>
       </div>
 
-      <div id="verdictCard">
-        <div class="win-line"><span class="win-label">Argon picked</span><span class="win-badge" id="winLetter"></span><span class="win-what" id="winWhat"></span></div>
-        <p id="remaining"></p>
-        <div class="actions">
-          <button id="revealGo" class="run-btn small">Show the reveal</button>
-          <button id="againBtn" class="ghost big">Run another round</button>
+      <div id="runBody">
+        <div id="stageCol">
+          <div id="clockRow">
+            <div id="clock">00:00</div>
+            <div id="clockSub" class="quiet">into the flood</div>
+            <div id="stageTools">
+              <button id="lapseBtn" class="text" hidden>Show what Argon sees</button>
+              <button id="pauseBtn" class="text">Pause</button>
+            </div>
+          </div>
+          <div id="scrub">
+            <div id="scrubFill"></div>
+            <div id="scrubTicks"></div>
+            <input id="scrubIn" type="range" min="0" max="1000" step="1" value="0" aria-label="Time in the flood">
+          </div>
+          <div id="stageWrap">
+            <div id="stageBox">
+              <div id="agents">
+                <div class="ag" data-h="sewer"><h3>Water comes up the sewer drain</h3><div class="ag-sub quiet">Gemini Managed Agent · own sandbox · runs the drainage simulation</div><div class="ag-time">00:00</div><div class="ag-body"></div></div>
+                <div class="ag" data-h="door"><h3>Water comes in under the door</h3><div class="ag-sub quiet">Gemini Managed Agent · own sandbox · runs the drainage simulation</div><div class="ag-time">00:00</div><div class="ag-body"></div></div>
+                <div class="ag" data-h="both"><h3>Both</h3><div class="ag-sub quiet">Gemini Managed Agent · own sandbox · runs the drainage simulation</div><div class="ag-time">00:00</div><div class="ag-body"></div></div>
+              </div>
+              <div id="agNote" class="quiet">Recorded run · Gemini Managed Agents</div>
+              <div id="tiles"></div>
+              <div id="curves"><svg id="curveSvg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet"></svg></div>
+              <video id="liveVideo" muted loop playsinline preload="auto"></video>
+              <div id="upBar"><i></i></div>
+              <div id="playStrip"><i id="playHead"></i></div>
+              <div class="empty quiet" id="liveVideoErr" hidden>The video could not be played here</div>
+              <div class="empty quiet" id="stageEmpty">Running three simulations</div>
+              <div id="watchMark" hidden><span class="scan"></span><span class="wm-label">Argon is watching</span></div>
+            </div>
+          </div>
+          <div id="caption" class="quiet"></div>
         </div>
-        <div class="label">The moments that decided it</div>
-        <ul id="moments"></ul>
-      </div>
 
-      <div id="errorCard">
-        <div class="err-title">The round did not finish</div>
-        <p id="errText"></p>
-        <pre id="errLog"></pre>
-        <button id="retryBtn" class="run-btn small">Try again</button>
+        <aside id="sideCol">
+          <div id="sideHint" class="quiet">Argon's pick, and the moments that decided it, will appear here.</div>
+          <div id="trained" hidden>
+            <div class="eyebrow">What Argon changed</div>
+            <ul id="changes"></ul>
+            <div class="actions">
+              <button id="testBtn" class="primary">Test on a flood it has never seen</button>
+              <button id="againBtn" class="text">Calibrate again</button>
+            </div>
+          </div>
+          <div id="testing" class="quiet" hidden></div>
+          <div id="verdict" hidden>
+            <div class="eyebrow" id="pickEyebrow">Argon's pick</div>
+            <div class="winline"><span id="winLetter"></span><span id="winWhat"></span></div>
+            <p id="remaining"></p>
+            <div class="eyebrow">Moments that decided it</div>
+            <ul id="moments"></ul>
+          </div>
+        </aside>
       </div>
+      <div id="legend"><div id="legendCands"></div></div>
+    </div>
+
+    <div id="errorCard">
+      <div class="err-title">The round did not finish</div>
+      <p id="errText"></p>
+      <pre id="errLog"></pre>
+      <button id="retryBtn" class="primary">Try again</button>
     </div>
   </section>
 
   <section id="strip">
-    <span class="badge" id="stripBadge">Recorded run</span>
     <div id="chips"></div>
-    <div id="holdoutInfo" hidden></div>
+    <span class="quiet" id="stripBadge"></span>
   </section>
 
   <main id="stage">
     <section class="pane" id="videoPane">
       <div class="pane-head">
         <span class="pane-title">Real camera</span>
-        <span class="pane-sub" id="videoSub"></span>
-        <span class="badge" id="videoBadge">Recorded footage</span>
+        <span class="pane-sub quiet" id="videoSub"></span>
       </div>
       <div class="frame" id="videoFrame">
         <video id="video" muted playsinline preload="auto"></video>
-        <div class="empty" id="videoEmpty" hidden>No clip for this camera yet</div>
+        <div class="empty quiet" id="videoEmpty" hidden>No clip for this camera yet</div>
       </div>
     </section>
     <section class="pane" id="simPane">
       <div class="pane-head">
         <span class="pane-title">Simulation</span>
-        <span class="pane-sub" id="simSub"></span>
-        <span class="toggle" id="predToggle" hidden>
-          <button data-pred="blind">Blind</button><button data-pred="informed" class="on">Informed</button>
-        </span>
-        <span class="badge live">Live</span>
+        <span class="pane-sub quiet" id="simSub"></span>
       </div>
       <div class="frame" id="simFrame">
         <iframe id="harness" src="./index.html" title="3D simulation"></iframe>
-        <div class="empty" id="simEmpty" hidden></div>
+        <div class="empty quiet" id="simEmpty" hidden></div>
       </div>
     </section>
   </main>
@@ -114,61 +150,76 @@
       <input id="slider" type="range" min="0" max="1000" step="1" value="0" aria-label="Time from event start">
       <div id="ticks"></div>
     </div>
-    <div class="time dim" id="timeEnd">00:00</div>
+    <div class="time quiet" id="timeEnd">00:00</div>
     <div class="speeds" id="speeds">
       <button data-speed="1">1x</button><button data-speed="8">8x</button><button data-speed="16" class="on">16x</button><button data-speed="32">32x</button>
     </div>
     <div class="cams">
-      <button data-cam="cam1">Pond and weir <small>cam1</small></button><button data-cam="cam5" class="on">Basement <small>cam5</small></button>
+      <button data-cam="cam1">Pond and weir</button><button data-cam="cam5" class="on">Basement</button>
     </div>
   </section>
 
   <section id="bottom">
-    <div id="critique" class="panel">
+    <div id="critique">
       <div class="panel-head">
         <span class="panel-title">Critique</span>
-        <span class="pane-sub" id="critSub"></span>
-        <span class="badge" id="critBadge">Recorded run</span>
+        <span class="pane-sub quiet" id="critSub"></span>
       </div>
       <div class="crit-body">
         <ol id="rows"></ol>
         <aside id="critSide">
-          <div class="label">Knob changes</div>
+          <div class="eyebrow">Knob changes</div>
           <div id="knobs"></div>
-          <div class="label" id="patchLabel">Scene patch</div>
+          <div class="eyebrow" id="patchLabel">Scene patch</div>
           <div id="patch"></div>
-          <div class="label">Evidence</div>
+          <div class="eyebrow">Evidence</div>
           <p id="evidence"></p>
-          <button id="watchBtn" class="ghost">What Argon watched</button>
-          <button id="contactBtn" class="ghost">Contact sheet</button>
+          <button id="watchBtn" class="text">What Argon watched</button>
+          <button id="contactBtn" class="text">Contact sheet</button>
         </aside>
       </div>
     </div>
+  </section>
 
-    <div id="revealPanel" class="panel" hidden>
-      <div class="panel-head">
-        <span class="panel-title">Basement depth, held-out event</span>
-        <span class="pane-sub" id="revealSub"></span>
-        <span class="badge live">Live</span>
+  <section id="reveal" hidden>
+    <p id="revealNote" class="quiet"></p>
+    <div id="rvTilesWrap">
+      <div id="rvTiles">
+        <figure class="rv-fig">
+          <div class="tile" id="rvReal"><video id="rvVideo" muted playsinline preload="auto"></video></div>
+          <figcaption id="rvRealCap">Real camera, hidden flood</figcaption>
+        </figure>
+        <figure class="rv-fig">
+          <div class="tile" id="rvModel"><div class="tile" id="rvBlind"></div><div class="tile" id="rvInformed"></div></div>
+          <figcaption>
+            <span id="rvModelCap">Model after watching one flood</span>
+            <span id="rvToggle"><button data-w="blind">Before</button><button data-w="informed" class="on">After</button></span>
+          </figcaption>
+        </figure>
       </div>
-      <div class="reveal-body">
-        <div id="chartWrap">
-          <svg id="chart" role="img" aria-label="Basement depth over time"></svg>
-          <div id="tip" hidden></div>
-        </div>
-        <div id="scores">
-          <div id="revealGate">
-            <button id="revealBtn" class="reveal-btn">Reveal sensors</button>
-            <p class="dim">The gauges were never shown to the model. Both predictions are frozen.</p>
-          </div>
-          <div id="scoreCards" hidden></div>
-        </div>
+    </div>
+    <div id="rvClock">
+      <button id="rvPlay" class="text" aria-label="Pause">Pause</button>
+      <span id="rvTime">00:00</span>
+      <input id="rvSlider" type="range" min="0" max="1000" step="1" value="0" aria-label="Time from event start">
+    </div>
+    <div id="chartWrap">
+      <svg id="chart" role="img" aria-label="Basement depth over time"></svg>
+    </div>
+    <div id="rvFoot">
+      <div id="revealGate">
+        <button id="revealBtn" class="primary">Reveal sensors</button>
+        <span class="quiet">The gauges were never shown to the model. Both predictions are frozen.</span>
+      </div>
+      <div id="scoreCards" hidden>
+        <p id="sentence"></p>
+        <p id="compare" class="quiet"></p>
       </div>
     </div>
   </section>
 </div>
 
-<div id="overlay" hidden><img id="overlayImg" alt="Contact sheet"><video id="overlayVid" muted playsinline loop hidden></video><span class="dim">Click to close</span></div>
+<div id="overlay" hidden><img id="overlayImg" alt="Contact sheet"><video id="overlayVid" muted playsinline loop hidden></video><span class="quiet">Click to close</span></div>
 <script type="module" src="./demo.js"></script>
 </body>
 </html>

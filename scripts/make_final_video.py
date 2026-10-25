@@ -169,10 +169,10 @@ def main(keep_voice=False):
         mosaic(OUT / "f0.mp4", 4, views=[
             [(ROOT / "data/clips/20_cam1.mp4", 180, "Pond"),
              (ROOT / "data/raw/video/161006A/cam3/c3_cam3_instar_161006_143254_144255.avi", 330, "Channel"),
-             (ROOT / "data/clips/20_cam5.mp4", 200, "Basement")],
+             (ROOT / "data/clips/20_cam5.mp4", 200, "Building")],
             [(ROOT / "data/clips/32_cam1.mp4", 240, "Pond"),
              (ROOT / "data/raw/video/161006B/cam3/c3_cam3_instar_161006_211833_212838.avi", 120, "Channel"),
-             (ROOT / "data/clips/32_cam5.mp4", 250, "Basement")]]),
+             (ROOT / "data/clips/32_cam5.mp4", 250, "Building")]]),
         still(card(OUT / "plan.png", OUT / "f0b.png", "Gemini 4 Argon reads the site plan"), 2.5, OUT / "f0b.mp4"),
         titled(clip(OUT / "orbit.mp4", 0, 6, 4, OUT / "f1a_raw.mp4"), "...and builds the whole site in 3D, in one pass", OUT / "f1a.mp4"),
         still(card(triptych([RUN_DIR / "round_00/real/32_cam5_t00000.jpg", RUN_DIR / "round_00/render_0/cam5_t00000.png",

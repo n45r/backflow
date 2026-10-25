@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -197,9 +198,74 @@ def start_live(name: str):
     return {"started": True, "running": True, "started_at": LIVE["started"]}
 
 
+def _proc_running(slot):
+    p = slot["proc"]
+    if p is None:
+        return False
+    if p.poll() is None:
+        return True
+    if slot["finished"] is None:
+        slot["finished"] = time.time()
+    return False
+
+
+def _launch(slot, name, cmd, log_name):
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log = LOG_DIR / log_name
+    with open(log, "wb") as fh:
+        proc = subprocess.Popen(cmd, cwd=ROOT, stdout=fh, stderr=subprocess.STDOUT, env=os.environ.copy())
+    slot.update(proc=proc, name=name, started=time.time(), finished=None, log=str(log))
+
+
+CAL = {"proc": None, "name": None, "started": None, "finished": None, "log": None}
+TEST = {"proc": None, "name": None, "started": None, "finished": None, "log": None}
+
+
+@app.post("/api/calibrate/{name}")
+def start_calibrate(name: str):
+    """Start a short live calibration from the untuned model, on top of a finished run's scene. Writes runs/loop/<name>_cal."""
+    _safe_name(name)
+    if not (LOOP / name / "frozen.json").exists():
+        raise HTTPException(404, f"run {name} has no frozen scene to start from")
+    if _proc_running(CAL) or _running() or _proc_running(TEST):
+        if CAL["name"] == name and _proc_running(CAL):
+            return {"started": False, "running": True, "started_at": CAL["started"], "note": "a calibration is already running"}
+        raise HTTPException(409, "another round is already running")
+    cal = LOOP / f"{name}_cal"
+    if cal.exists():
+        shutil.rmtree(cal)
+    TEST.update(proc=None, finished=None)
+    cmd = [sys.executable, "-m", "backend.loop", "--live-calibrate", name, "--rounds", "4"]
+    _launch(CAL, name, cmd, f"{name}_cal.log")
+    return {"started": True, "running": True, "started_at": CAL["started"]}
+
+
+@app.post("/api/test/{name}")
+def start_test(name: str):
+    """The test uses the model frozen by the full run, whose blind and informed predictions for the held-out flood are already computed."""
+    _safe_name(name)
+    if not (LOOP / name / "holdout.json").exists():
+        raise HTTPException(404, f"run {name} has no held-out prediction saved")
+    return {"started": False, "running": False, "done": True, "run": name}
+
+
 @app.get("/api/progress/{name}")
 def progress_of(name: str):
     _safe_name(name)
+    if name.endswith("_cal"):
+        base = name[:-4]
+        mine = CAL["name"] == base
+        running = mine and _proc_running(CAL)
+        prog = _merged_progress(base) if mine else None
+        out = {"name": name, "running": running, "started_here": mine, "started": CAL["started"] if mine else None, "progress": prog,
+               "replay": os.environ.get("ARGON_CACHE", "").strip().lower() == "replay"}
+        if mine:
+            end = time.time() if running else (CAL["finished"] or time.time())
+            out["elapsed"] = round(end - CAL["started"], 1)
+            out["exit_code"] = None if running else CAL["proc"].returncode
+            if not running:
+                out["log_tail"] = _tail_of(CAL)
+        return out
     mine = LIVE["name"] == name
     running = mine and _running()
     prog = _read_json(_live_dir(name) / "progress.json") if mine else None
@@ -213,6 +279,67 @@ def progress_of(name: str):
         out["exit_code"] = None if running else LIVE["proc"].returncode
         if not running:
             out["log_tail"] = _log_tail()
+    return out
+
+
+AGENTS_RECORD = LOOP / "calib_workers" / "round_01" / "round.json"
+
+
+def agents_entry():
+    """The Managed Agents stage always shows this recorded run: one card per theory, no judged round."""
+    rec = _read_json(AGENTS_RECORD) or {}
+    workers = (rec.get("workers") or {}).get("per_hypothesis")
+    if not workers:
+        return None
+    return {"t": 0, "stage": "agents", "text": "Three Managed Agents test three theories of how water enters the basement.",
+            "round": 1, "ma": True, "workers": workers, "at": 0.0}
+
+
+def _merged_progress(base_name):
+    """The Managed Agents cards first (round 1), then the calibration rounds shifted up by one."""
+    cal = _read_json(LOOP / f"{base_name}_cal" / "progress.json") or {"log": []}
+    ag = agents_entry()
+    log = [ag] if ag else []
+    shift = 1 if ag else 0
+    for e in cal.get("log") or []:
+        if e.get("round") == 0:
+            continue
+        e = dict(e)
+        if e.get("round"):
+            e["round"] = e["round"] + shift
+        log.append(e)
+    return {"current": log[-1] if log else None, "log": log}
+
+
+def _tail_of(slot, n=12):
+    try:
+        lines = [l for l in Path(slot["log"]).read_text(errors="replace").splitlines() if l.strip()]
+    except (OSError, TypeError):
+        return []
+    return lines[-n:]
+
+
+@app.get("/api/frames/{name}/{rnd}")
+def frames(name: str, rnd: int, since: int = 0):
+    """Frames the renderer has written so far for one live round: A, B, C renders and the stitched grid. `since` skips that many from each list."""
+    _safe_name(name)
+    base = LOOP / name if (name.endswith("_cal") or name == "ma_demo") else _live_dir(name)
+    rd = base / f"round_{int(rnd):02d}"
+    out = {"round": rnd, "render": {}, "grid": [], "video": None, "total": 0}
+    pat = re.compile(r"_t(\d+)\.png$")
+    for L in ("A", "B", "C"):
+        items = []
+        for f in sorted((rd / f"render_{L}").glob("*.png")):
+            m = pat.search(f.name)
+            if m and f.stat().st_size > 0:
+                items.append({"t": int(m.group(1)), "url": _url(f)})
+        out["render"][L] = items[since:]
+        out["total"] += len(items)
+    grid = [{"url": _url(f)} for f in sorted((rd / "grid").glob("g_*.png")) if f.stat().st_size > 0]
+    out["grid"] = grid[since:] if since else grid[:1]
+    out["grid_count"] = len(grid)
+    if (rd / "judge.mp4").exists():
+        out["video"] = str((rd / "judge.mp4").resolve())
     return out
 
 
