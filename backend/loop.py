@@ -98,12 +98,25 @@ class Loop:
         self.params.setdefault("basement_path", "sewer")
         self.patch = {}
         self.video = False
+        self.workers = False
+        self.worker_info = None
         self.step = 0.4
         self.history = []
         self.renderer = Renderer()
         self.renderer.site = self.site
         self.times = key_times(event)
         self.labels = [f"t={t} s" for t in self.times]
+
+    def video_window(self):
+        """From just before water shows in the drain to well after the floor drains, read from Argon's video
+        timeline (never from gauges). Deeper water drains later, so the draining phase must be in view."""
+        tl = RUNS / "timeline" / f"{self.event}.json"
+        d = json.loads(tl.read_text()) if tl.exists() else {}
+        first = d.get("basement_drain_water_s") or d.get("basement_wet_onset_s") or 240
+        last = d.get("basement_recede_s") or first + 600
+        start, end = max(0, round(first) - 90), round(last) + 300
+        span = (data.event_window(self.event)[1] - data.event_window(self.event)[0]).total_seconds()
+        return start, int(min(end, span - 10))
 
     def real_frames(self, out, times=None):
         from backend import frames
@@ -155,7 +168,39 @@ class Loop:
         return record
 
     def path_candidates(self):
-        return {L: dict(self.params, basement_path=p) for L, p in zip(LABELS, KNOBS["basement_path"])}
+        cands = {L: dict(self.params, basement_path=p) for L, p in zip(LABELS, KNOBS["basement_path"])}
+        if self.workers:
+            cands = self.worker_candidates(cands)
+        return cands
+
+    def worker_candidates(self, cands):
+        """Run one hypothesis worker per path in parallel; each candidate takes its worker's best knob values.
+        A candidate whose worker fails keeps the current parameters."""
+        from workers import hypothesis
+        t0 = time.time()
+        name = f"{self.dir.name}_r{len(self.history):02d}"
+        info = {"name": name, "event": self.event, "dry_event": SPLIT["dry"], "per_hypothesis": {}}
+        try:
+            targets = hypothesis.targets_from_timeline(self.event)
+            summary = hypothesis.run_all(self.event, SPLIT["dry"], targets, name, site=self.site, params=self.params)
+        except Exception as e:
+            info.update(error=str(e)[:500], seconds=round(time.time() - t0, 1))
+            self.worker_info = info
+            return cands
+        info.update(targets=targets, seconds=summary["wall_seconds"], total_tokens=summary["total_tokens"])
+        out = {}
+        for L, c in cands.items():
+            brief = dict(summary["workers"].get(c["basement_path"]) or {})
+            best = clamp(brief.get("best_knobs") or {})
+            best = {k: v for k, v in best.items() if k in numeric_knobs()}
+            ok = bool(brief.get("best_knobs")) and len(best) == len(numeric_knobs())
+            brief.update(candidate=L, used=ok, runs=brief.get("n_cal_runs_logged"))
+            if not ok:
+                brief["fallback"] = "current parameters"
+            info["per_hypothesis"][c["basement_path"]] = brief
+            out[L] = dict(c, **best) if ok else c
+        self.worker_info = info
+        return out
 
     def numeric_candidates(self):
         """A: current. B: less basement water. C: more. Each knob moves in the direction that has that effect."""
@@ -186,8 +231,7 @@ class Loop:
                 depths[L] = f.result()
         if self.video:
             from backend import videojudge
-            onset = self.times[2] if len(self.times) > 2 else 300
-            start, end = max(0, onset - 180), onset + 420
+            start, end = self.video_window()
             video, sheet = videojudge.build_video(self.renderer, self.scene_url, depths, self.event, CAM, start, end, out)
             t_sim = time.time()
             key = json.dumps({"event": self.event, "scene": file_sha(self.scene), "patch": self.patch, "step": videojudge.STEP_S,
@@ -216,6 +260,7 @@ class Loop:
                   "critique": {"rows": rows, "remaining_error": res.get("remaining_error"), "direction": res.get("direction"),
                                "confidence": res.get("confidence"), "raw": res.get("raw")},
                   "applied_knobs": changed, "scene_changed": False, "usage": verdict["usage"],
+                  **({"workers": self.worker_info} if kind == "path" and self.worker_info else {}),
                   "seconds": {"sim_render": round(t_sim - t0, 1), "judge": round(verdict["seconds"], 1),
                               "total": round(time.time() - t0, 1)}}
         (out / "round.json").write_text(json.dumps(record, indent=1, default=str))
@@ -276,6 +321,7 @@ def main():
     ap.add_argument("--rounds", type=int, default=3, help="numeric rounds after the path round")
     ap.add_argument("--no-structure", action="store_true")
     ap.add_argument("--video", action="store_true", help="Argon judges a side-by-side video instead of still frames")
+    ap.add_argument("--workers", action="store_true", help="hypothesis workers tune each path candidate before Argon judges")
     a = ap.parse_args()
     if a.live:
         rec = live_round(a.live, video=a.video or True)
@@ -283,6 +329,7 @@ def main():
         return
     lp = Loop(a.event, ROOT / a.scene, a.name)
     lp.video = a.video
+    lp.workers = a.workers
     records, frozen = lp.run(a.rounds, structure=not a.no_structure)
     for r in records:
         print(r["round"], r["kind"], r.get("winner"), r["applied_knobs"], r.get("scene_changed"), r["seconds"])
