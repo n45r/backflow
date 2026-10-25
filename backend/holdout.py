@@ -26,6 +26,15 @@ def untuned_params():
     return p
 
 
+def _first_scene(d):
+    """The scene as Argon first wrote it, before any structural fix."""
+    r0 = d / "round_00" / "round.json"
+    if not r0.exists():
+        return None
+    rec = json.loads(r0.read_text())
+    return rec.get("scene_before") or str(ROOT / "web" / "scene" / "r0_blind.js")
+
+
 def _series(a):
     return [None if (x is None or (isinstance(x, float) and np.isnan(x))) else round(float(x), 4) for x in a]
 
@@ -45,7 +54,8 @@ def make(name, event=None):
         scores[label] = evaluator.score(event, depths[label])
     (d / "holdout.json").write_text(json.dumps({
         "event": event, "frozen_sha": frozen.get("sha"),
-        "blind_scene": frozen["scene"], "blind_depths": str(depths["blind"]),
+        "blind_scene": _first_scene(d) or frozen["scene"], "blind_depths": str(depths["blind"]), "blind_patch": {},
+        "informed_patch": frozen.get("patch") or {},
         "informed_scene": frozen["scene"], "informed_depths": str(depths["informed"]),
         "params": {k: models[k] for k in models},
     }, indent=1))

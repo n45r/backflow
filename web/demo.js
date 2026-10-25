@@ -84,7 +84,7 @@ function currentView() {
       scene: state.pred === 'blind' ? h.blind_scene_url : h.informed_scene_url,
       depths: state.pred === 'blind' ? h.blind_depths_url : h.informed_depths_url,
       clips: h.clips,
-      patch: (d.frozen && d.frozen.patch) || {},
+      patch: (state.pred === 'blind' ? h.blind_patch : h.informed_patch) || (d.frozen && d.frozen.patch) || {},
     };
   }
   const r = d.rounds[state.roundIdx];

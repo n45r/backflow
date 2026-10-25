@@ -109,6 +109,8 @@ def loop_summary(name: str):
             "blind_depths_url": _url(holdout.get("blind_depths")),
             "informed_scene_url": _url(holdout.get("informed_scene")),
             "informed_depths_url": _url(holdout.get("informed_depths")),
+            "blind_patch": holdout.get("blind_patch"),
+            "informed_patch": holdout.get("informed_patch"),
             "clips": _clips(ev, loop_dir),
         }
     return {

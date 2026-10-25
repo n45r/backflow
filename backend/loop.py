@@ -113,6 +113,7 @@ class Loop:
         out.mkdir(parents=True, exist_ok=True)
         t0 = time.time()
         dry = {"t": [0], "depth_m": {}}
+        scene_before = str(self.scene)
         real = self.real_frames(out, [0])
         log = []
         sheet = None
@@ -142,7 +143,7 @@ class Loop:
                 break
         (self.dir / "patch.json").write_text(json.dumps(self.patch, indent=1))
         evidence = "; ".join(d for l in log for d in (l.get("differences") or []))
-        record = {"round": n, "kind": "structure", "event": self.event, "scene": str(self.scene),
+        record = {"round": n, "kind": "structure", "event": self.event, "scene": str(self.scene), "scene_before": scene_before,
                   "scene_sha": file_sha(self.scene), "patch": self.patch, "params": copy.deepcopy(self.params),
                   "contact": str(sheet),
                   "critique": {"rows": [{"label": "dry frame", "verdict": "patched" if self.patch else "same", "evidence": evidence}],
