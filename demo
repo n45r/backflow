@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Start the Backflow demo. Usage: ./demo [--replay]
+# --replay answers from recorded Argon replies, so no network is needed.
+set -euo pipefail
+cd "$(dirname "$0")"
+# Port: BACKFLOW_PORT if set, else the first free one from 8770 up (8765 belongs to another app).
+free() { ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+PORT="${BACKFLOW_PORT:-}"
+if [ -z "$PORT" ]; then
+  for p in $(seq 8770 8799); do
+    if [ "$p" != 8780 ] && free "$p"; then PORT="$p"; break; fi
+  done
+fi
+[ -n "$PORT" ] || { echo "No free port found in 8770-8799. Set BACKFLOW_PORT." >&2; exit 1; }
+for arg in "$@"; do
+  case "$arg" in
+    --replay) export ARGON_CACHE=replay ;;
+    -h|--help) echo "usage: ./demo [--replay]   (port: BACKFLOW_PORT, default first free from 8770)"; exit 0 ;;
+    *) echo "unknown option: $arg" >&2; exit 2 ;;
+  esac
+done
+if ! free "$PORT"; then
+  echo "Port $PORT is already in use. Pick another: BACKFLOW_PORT=8771 ./demo" >&2
+  exit 1
+fi
+export BACKFLOW_PORT="$PORT"
+echo
+echo "  Backflow demo:  http://127.0.0.1:$PORT/demo.html"
+if [ "${ARGON_CACHE:-}" = "replay" ]; then echo "  Mode: offline replay (recorded Argon answers)"; else echo "  Mode: live (calls Argon)"; fi
+echo "  Stop with Ctrl-C."
+echo
+exec .venv/bin/python -m uvicorn backend.server:app --host 127.0.0.1 --port "$PORT" --log-level warning

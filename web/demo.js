@@ -1,13 +1,14 @@
 const $ = id => document.getElementById(id);
 const qs = new URLSearchParams(location.search);
-const RUN = qs.get('run') || 'calib';
+const RUN_PARAM = qs.get('run');
+const RUN = RUN_PARAM || 'calib_video';
 const LIVE_FROM = qs.has('live') ? Number(qs.get('live')) : Infinity;
 const PAGE_LOADED = Date.now() / 1000;
 const HW = 854, HH = 480;
 const CAM_NAMES = { cam1: 'Pond and weir', cam5: 'Basement' };
 
 const state = {
-  run: RUN, data: null, roundIdx: 0, mode: 'calib', cam: 'cam5', pred: 'informed',
+  run: RUN, data: null, roundIdx: 0, mode: 'live', cam: 'cam5', pred: 'informed',
   t: 0, duration: 0, playing: false, speed: 16, depths: null,
   holdout: { blind: null, informed: null }, reveal: null, sceneUrl: null, clipUrl: null,
 };
@@ -324,6 +325,8 @@ function setCam(cam) {
 
 function setMode(mode) {
   state.mode = mode;
+  document.body.dataset.mode = mode;
+  $('modeLive').classList.toggle('active', mode === 'live');
   $('modeCalib').classList.toggle('active', mode === 'calib');
   $('modeReveal').classList.toggle('active', mode === 'reveal');
   $('critique').hidden = mode !== 'calib';
@@ -334,6 +337,7 @@ function setMode(mode) {
   $('stripBadge').hidden = mode !== 'calib';
   setPlaying(false);
   setT(0, true);
+  if (mode === 'live') return;
   if (mode === 'reveal') {
     const h = state.data && state.data.holdout;
     const f = state.data && state.data.frozen;
@@ -537,7 +541,7 @@ async function loadRun() {
   $('fixtureBadge').hidden = !data.fixture;
   drawChips();
   drawCritique();
-  await applyView();
+  if (state.mode !== 'live') await applyView();
 }
 
 async function poll() {
@@ -569,6 +573,7 @@ function wire() {
     document.querySelectorAll('#predToggle button').forEach(x => x.classList.toggle('on', x === b));
     applyView();
   });
+  $('modeLive').onclick = () => setMode('live');
   $('modeCalib').onclick = () => setMode('calib');
   $('modeReveal').onclick = () => setMode('reveal');
   $('revealBtn').onclick = doReveal;
@@ -595,16 +600,248 @@ function wire() {
     else if (e.key === 'ArrowLeft' && state.mode === 'calib') selectRound(state.roundIdx - 1);
     else if (e.key === 'c') setCam(state.cam === 'cam1' ? 'cam5' : 'cam1');
     else if (e.key === 'r') setMode(state.mode === 'reveal' ? 'calib' : 'reveal');
+    else if (e.key === 'l') setMode('live');
     else if (e.key === 'Escape') $('overlay').hidden = true;
   });
   new ResizeObserver(fitHarness).observe($('simFrame'));
   new ResizeObserver(() => { if (state.mode === 'reveal') drawChart(); }).observe($('chartWrap'));
 }
 
-window.demo = { state, setT, setMode, selectRound, setCam, doReveal };
+/* ---------- live round ---------- */
 
+const STEPS = { simulate: 0, render: 1, video: 1, upload: 2, watching: 3, verdict: 4, done: 4 };
+const live = {
+  phase: 'idle', startedLocal: 0, elapsed: 0, timer: null, videoPath: null, videoSeenAt: 0,
+  verdictShown: false, lastErr: null, replay: false, ready: true, polling: false,
+};
+
+function setLiveState(st) {
+  live.phase = st;
+  $('live').dataset.state = st;
+}
+
+function railShow(done, now) {
+  document.querySelectorAll('#rail li').forEach(li => {
+    const i = Number(li.dataset.step);
+    li.classList.toggle('done', i < now || done);
+    li.classList.toggle('now', !done && i === now);
+  });
+}
+
+function describe(label, cands) {
+  if (!cands || !cands[label]) return '';
+  if (label === 'A') return 'current settings';
+  const a = cands.A || {}, c = cands[label];
+  const diffs = Object.keys(c).filter(k => c[k] !== a[k]);
+  if (!diffs.length) return 'same settings';
+  if (diffs.length === 1 && diffs[0] === 'basement_path') return `water comes in by the ${c.basement_path}`;
+  return diffs.map(k => {
+    const x = a[k], y = c[k];
+    if (typeof x === 'number' && typeof y === 'number') return `${k.replace(/_/g, ' ')} ${y < x ? 'lower' : 'higher'} (${fmtVal(y)})`;
+    return `${k.replace(/_/g, ' ')} ${fmtVal(y)}`;
+  }).join(', ');
+}
+
+function lastWith(log, pred) {
+  for (let i = log.length - 1; i >= 0; i--) if (pred(log[i])) return log[i];
+  return null;
+}
+
+function setLiveVideo(path) {
+  if (!path || path === live.videoPath) return;
+  live.videoPath = path;
+  live.videoSeenAt = performance.now();
+  const v = $('liveVideo');
+  $('liveVideoErr').hidden = true;
+  v.src = `/api/video?path=${encodeURIComponent(path)}`;
+  v.playbackRate = 2;
+  v.play().catch(() => {});
+  $('live').dataset.vid = '1';
+}
+
+function friendlyError(msg, tail) {
+  const all = (tail || []).join('\n') + ' ' + (msg || '');
+  if (/no recorded answer|CacheMiss|ARGON_CACHE=replay/.test(all)) {
+    return 'Offline replay has no recorded answer for this round. Restart with ./demo (no --replay) to call Argon live.';
+  }
+  return msg || 'The round stopped before Argon gave a verdict.';
+}
+
+function showError(msg, tail) {
+  setLiveState('error');
+  stopTimer();
+  $('errText').textContent = friendlyError(msg, tail);
+  $('errLog').textContent = (tail || []).slice(-8).join('\n');
+  $('errLog').hidden = !(tail && tail.length);
+}
+
+const clean = t => String(t || '').replace(/\s*[\u2014\u2013]\s*/g, ', ');
+
+function showVerdict(entry, cands) {
+  const w = entry.winner;
+  $('winLetter').textContent = w;
+  $('winLetter').className = 'win-badge ' + w;
+  $('winWhat').textContent = describe(w, cands);
+  const rem = (entry.text || '').replace(/^Round \d+: Argon picked [ABC]\.?\s*/, '');
+  $('remaining').textContent = rem ? `Still off: ${clean(rem)}` : '';
+  $('remaining').hidden = !rem;
+  const ul = $('moments');
+  ul.innerHTML = '';
+  for (const m of entry.moments || []) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="mt"></span><span class="pick"></span><span class="ev"></span>';
+    li.querySelector('.mt').textContent = m.label || '';
+    const b = m.verdict;
+    li.querySelector('.pick').textContent = b === 'tie' ? 'tie' : `best ${b}`;
+    li.querySelector('.pick').classList.add(b === 'tie' ? 'tie' : b);
+    li.querySelector('.ev').textContent = clean(m.evidence);
+    ul.appendChild(li);
+  }
+  $('stageText').textContent = `Argon picked ${w}.`;
+  railShow(true, 5);
+  setLiveState('done');
+  live.verdictShown = true;
+}
+
+function renderLive(r) {
+  live.replay = !!r.replay;
+  $('modeBadge').textContent = live.replay ? 'Offline replay' : 'Live';
+  $('modeBadge').classList.toggle('replay', live.replay);
+  $('modeBadge').classList.toggle('live', !live.replay);
+  $('runNote').textContent = live.replay ? 'Replays a recorded answer, no network needed' : `Run ${state.run}, about a minute`;
+  if (!r.started_here) return;
+  // A page opened fresh shows the start button. It only picks up a round that is still running.
+  if (!live.active) { if (!r.running) return; live.active = true; live.sawRunning = false; }
+  if (live.expect && r.started !== live.expect) return;
+  const p = r.progress;
+  const log = (p && p.log) || [];
+  const cur = p && p.current;
+  if (r.running) {
+    if (live.phase !== 'running' && !live.verdictShown) startTimer(r.elapsed);
+    live.elapsed = r.elapsed;
+  } else {
+    live.elapsed = r.elapsed;
+  }
+  const vidEntry = lastWith(log, e => e.video);
+  if (vidEntry) setLiveVideo(vidEntry.video);
+  const sim = lastWith(log, e => e.stage === 'simulate' && e.candidates);
+  const cands = sim && sim.candidates;
+  if (cands) {
+    $('legendCands').innerHTML = '';
+    for (const L of ['A', 'B', 'C']) {
+      const sp = document.createElement('span');
+      sp.innerHTML = '<b></b><span></span>';
+      sp.querySelector('b').textContent = L;
+      sp.querySelector('span').textContent = describe(L, cands);
+      $('legendCands').appendChild(sp);
+    }
+  }
+  const verdict = lastWith(log, e => e.stage === 'verdict');
+  const failed = (cur && cur.stage === 'error') || (!r.running && !verdict && r.exit_code != null);
+  if (failed) {
+    showError(cur && cur.stage === 'error' ? cur.text : null, r.log_tail);
+    return;
+  }
+  if (verdict) {
+    // In offline replay the answer arrives at once. Hold it back until the video has played about once, so the room can watch.
+    const dur = $('liveVideo').duration;
+    const hold = live.replay && live.sawRunning && live.videoSeenAt ? Math.min(12, isFinite(dur) ? dur / 2 : 8) * 1000 : 0;
+    const waited = live.videoSeenAt ? performance.now() - live.videoSeenAt : hold;
+    if (waited >= hold) {
+      if (!live.verdictShown) { showVerdict(verdict, cands); stopTimer(); }
+      return;
+    }
+  }
+  if (live.verdictShown) return;
+  setLiveState('running');
+  live.sawRunning = true;
+  const shown = verdict ? 'watching' : (cur ? cur.stage : 'simulate');
+  const step = STEPS[shown] ?? 0;
+  railShow(false, step);
+  $('stageText').textContent = verdict ? (log.length ? 'Argon is watching the video' : '') : (cur ? cur.text : 'Starting');
+}
+
+function startTimer(from) {
+  live.startedLocal = performance.now() - (from || 0) * 1000;
+  stopTimer();
+  live.timer = setInterval(() => {
+    if (live.phase !== 'running') return;
+    $('elapsed').innerHTML = `Elapsed <b>${Math.floor((performance.now() - live.startedLocal) / 1000)}</b> seconds`;
+  }, 250);
+}
+
+function stopTimer() {
+  if (live.timer && live.phase === 'done') live.elapsed = (performance.now() - live.startedLocal) / 1000;
+  if (live.timer) clearInterval(live.timer);
+  live.timer = null;
+  if (live.phase === 'done' || live.phase === 'error') {
+    $('elapsed').innerHTML = `Took <b>${Math.round(live.elapsed || 0)}</b> seconds`;
+  }
+}
+
+async function pollLive() {
+  try {
+    const r = await getJSON(`/api/progress/${encodeURIComponent(state.run)}`);
+    renderLive(r);
+    live.ready = true;
+  } catch (e) { /* server busy */ }
+  const busy = live.phase === 'running';
+  setTimeout(pollLive, busy ? 700 : 3000);
+}
+
+async function startRound() {
+  live.videoPath = null; live.videoSeenAt = 0; live.verdictShown = false; live.elapsed = 0; live.expect = null; live.sawRunning = true; live.active = true;
+  $('liveVideo').removeAttribute('src');
+  $('live').dataset.vid = '0';
+  $('legendCands').innerHTML = '';
+  $('stageText').textContent = 'Starting the round';
+  $('elapsed').innerHTML = 'Elapsed <b>0</b> seconds';
+  railShow(false, 0);
+  setLiveState('running');
+  startTimer(0);
+  try {
+    const res = await fetch(`/api/live/${encodeURIComponent(state.run)}`, { method: 'POST' });
+    if (res.ok) live.expect = (await res.json()).started_at;
+    else {
+      let detail = res.statusText;
+      try { detail = (await res.json()).detail || detail; } catch (e) { /* not JSON */ }
+      showError(detail, []);
+    }
+  } catch (e) {
+    showError('Could not reach the demo server.', []);
+  }
+}
+
+function wireLive() {
+  $('runBtn').onclick = startRound;
+  $('againBtn').onclick = startRound;
+  $('retryBtn').onclick = startRound;
+  $('revealGo').onclick = () => setMode('reveal');
+  $('liveVideo').addEventListener('loadedmetadata', () => { $('liveVideo').playbackRate = 2; });
+  $('liveVideo').addEventListener('play', () => { $('liveVideo').playbackRate = 2; });
+  $('liveVideo').addEventListener('error', () => { if ($('liveVideo').getAttribute('src')) $('liveVideoErr').hidden = false; });
+}
+
+async function boot() {
+  if (!RUN_PARAM) {
+    try {
+      const d = await getJSON('/api/default_run');
+      state.run = d.name;
+    } catch (e) { /* keep the fallback name */ }
+  }
+  const asked = qs.get('mode') || (qs.has('round') || qs.has('live') ? 'calib' : 'live');
+  await loadRun();
+  setMode(['calib', 'reveal'].includes(asked) ? asked : 'live');
+  pollLive();
+}
+
+window.demo = { state, live, setT, setMode, selectRound, setCam, doReveal, startRound };
+
+document.body.dataset.mode = 'live';
 wire();
+wireLive();
+railShow(false, -1);
 fitHarness();
 requestAnimationFrame(tick);
-loadRun();
+boot();
 setInterval(poll, 4000);

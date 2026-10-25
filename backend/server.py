@@ -1,12 +1,18 @@
 import json
+import os
+import shutil
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parent.parent
-PORT = 8765
+PORT = int(os.environ.get("BACKFLOW_PORT", "8770"))
 WEB = ROOT / "web"
 RUNS = ROOT / "runs"
 CLIPS = ROOT / "data" / "clips"
@@ -132,6 +138,98 @@ def reveal(name: str):
     return data
 
 
+LOOP = RUNS / "loop"
+LOG_DIR = RUNS / "live_logs"
+LIVE = {"proc": None, "name": None, "started": None, "finished": None, "log": None}
+
+
+def _live_dir(name):
+    return LOOP / f"{_safe_name(name)}_live"
+
+
+def _running():
+    p = LIVE["proc"]
+    if p is None:
+        return False
+    if p.poll() is None:
+        return True
+    if LIVE["finished"] is None:
+        LIVE["finished"] = time.time()
+    return False
+
+
+def _log_tail(n=12):
+    try:
+        lines = [l for l in Path(LIVE["log"]).read_text(errors="replace").splitlines() if l.strip()]
+    except (OSError, TypeError):
+        return []
+    return lines[-n:]
+
+
+@app.get("/api/default_run")
+def default_run():
+    """The run the demo opens on: the full calibration if it finished, else the video one."""
+    for name in ("calib_full", "calib_video"):
+        if (LOOP / name / "frozen.json").exists():
+            return {"name": name, "live_ready": True, "replay": os.environ.get("ARGON_CACHE", "").strip().lower() == "replay"}
+    return {"name": "calib_video", "live_ready": False, "replay": False}
+
+
+@app.post("/api/live/{name}")
+def start_live(name: str):
+    """Start one live judged round on top of a finished run. One at a time; returns at once."""
+    _safe_name(name)
+    if not (LOOP / name / "frozen.json").exists():
+        raise HTTPException(404, f"run {name} has no frozen model to build on")
+    if _running():
+        if LIVE["name"] == name:
+            return {"started": False, "running": True, "started_at": LIVE["started"], "note": "a round is already running"}
+        raise HTTPException(409, f"a round for {LIVE['name']} is already running")
+    live = _live_dir(name)
+    if live.exists():
+        shutil.rmtree(live)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log = LOG_DIR / f"{name}.log"
+    with open(log, "wb") as fh:
+        proc = subprocess.Popen([sys.executable, "-m", "backend.loop", "--live", name], cwd=ROOT,
+                                stdout=fh, stderr=subprocess.STDOUT, env=os.environ.copy())
+    LIVE.update(proc=proc, name=name, started=time.time(), finished=None, log=str(log))
+    return {"started": True, "running": True, "started_at": LIVE["started"]}
+
+
+@app.get("/api/progress/{name}")
+def progress_of(name: str):
+    _safe_name(name)
+    mine = LIVE["name"] == name
+    running = mine and _running()
+    prog = _read_json(_live_dir(name) / "progress.json") if mine else None
+    if prog is None and not mine:
+        prog = _read_json(_live_dir(name) / "progress.json") or _read_json(LOOP / name / "progress.json")
+    out = {"name": name, "running": running, "started_here": mine, "started": LIVE["started"] if mine else None, "progress": prog,
+           "replay": os.environ.get("ARGON_CACHE", "").strip().lower() == "replay"}
+    if mine:
+        end = time.time() if running else (LIVE["finished"] or time.time())
+        out["elapsed"] = round(end - LIVE["started"], 1)
+        out["exit_code"] = None if running else LIVE["proc"].returncode
+        if not running:
+            out["log_tail"] = _log_tail()
+    return out
+
+
+@app.get("/api/video")
+def video(path: str):
+    """Serve the time-lapse Argon watched. Only mp4 files inside runs/loop, never anything else."""
+    p = Path(path)
+    p = (p if p.is_absolute() else ROOT / p).resolve()
+    try:
+        p.relative_to(LOOP.resolve())
+    except ValueError:
+        raise HTTPException(403, "not a run video")
+    if p.suffix != ".mp4" or not p.is_file():
+        raise HTTPException(404, "no such video")
+    return FileResponse(p, media_type="video/mp4", headers={"Cache-Control": "no-store"})
+
+
 CLIPS.mkdir(parents=True, exist_ok=True)
 app.mount("/clips", StaticFiles(directory=CLIPS), name="clips")
 app.mount("/runs", StaticFiles(directory=ROOT / "runs"), name="runs")
@@ -142,10 +240,6 @@ def main():
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
 
 
-if __name__ == "__main__":
-    main()
-
-
 # Gauge data must not be reachable by anything the browser loads before the reveal.
 @app.middleware("http")
 async def block_reveal_files(request, call_next):
@@ -154,3 +248,7 @@ async def block_reveal_files(request, call_next):
         from fastapi.responses import PlainTextResponse
         return PlainTextResponse("evaluator only", status_code=403)
     return await call_next(request)
+
+
+if __name__ == "__main__":
+    main()

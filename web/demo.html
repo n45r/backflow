@@ -14,10 +14,63 @@
     <div class="run" id="runName"></div>
     <div class="badge fixture" id="fixtureBadge" hidden>FIXTURE DATA</div>
     <nav class="modes">
-      <button id="modeCalib" class="mode active">Calibration</button>
+      <button id="modeLive" class="mode active">Live round</button>
+      <button id="modeCalib" class="mode">How we got here</button>
       <button id="modeReveal" class="mode">Reveal</button>
     </nav>
   </header>
+
+  <section id="live" data-state="idle" data-vid="0">
+    <div id="watchCard">
+      <h2>What Argon is watching</h2>
+      <div class="vidbox">
+        <video id="liveVideo" muted loop playsinline autoplay></video>
+        <div class="empty" id="liveVideoErr" hidden>The video could not be played here</div>
+      </div>
+      <div id="legend">
+        <div class="lg-line"><b>Top left</b> is the real camera. <b>A, B and C</b> are three versions of the model, drawn from the same view. Playing at 2x.</div>
+        <div id="legendCands"></div>
+      </div>
+    </div>
+
+    <div id="liveSide">
+      <div id="runCard">
+        <p class="lead">Argon watches a time-lapse of a real flood next to three versions of the model, then picks the version that matches best.</p>
+        <button id="runBtn" class="run-btn">Run a live round with Argon</button>
+        <div class="run-note"><span class="badge" id="modeBadge">Live</span><span id="runNote"></span></div>
+      </div>
+
+      <div id="statusCard">
+        <ol id="rail">
+          <li data-step="0"><i>1</i><span>Simulate</span></li>
+          <li data-step="1"><i>2</i><span>Draw in 3D</span></li>
+          <li data-step="2"><i>3</i><span>Send video</span></li>
+          <li data-step="3"><i>4</i><span>Argon watching</span></li>
+          <li data-step="4"><i>5</i><span>Verdict</span></li>
+        </ol>
+        <div id="stageText"></div>
+        <div id="elapsed"></div>
+      </div>
+
+      <div id="verdictCard">
+        <div class="win-line"><span class="win-label">Argon picked</span><span class="win-badge" id="winLetter"></span><span class="win-what" id="winWhat"></span></div>
+        <p id="remaining"></p>
+        <div class="actions">
+          <button id="revealGo" class="run-btn small">Show the reveal</button>
+          <button id="againBtn" class="ghost big">Run another round</button>
+        </div>
+        <div class="label">The moments that decided it</div>
+        <ul id="moments"></ul>
+      </div>
+
+      <div id="errorCard">
+        <div class="err-title">The round did not finish</div>
+        <p id="errText"></p>
+        <pre id="errLog"></pre>
+        <button id="retryBtn" class="run-btn small">Try again</button>
+      </div>
+    </div>
+  </section>
 
   <section id="strip">
     <span class="badge" id="stripBadge">Recorded run</span>

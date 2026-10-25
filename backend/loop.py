@@ -101,6 +101,9 @@ class Loop:
         self.workers = False
         self.worker_info = None
         self.step = 0.4
+        self.steps = {}
+        self.knob_turn = 0
+        self.current_knob = None
         self.history = []
         self.renderer = Renderer()
         self.renderer.site = self.site
