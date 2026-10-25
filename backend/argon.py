@@ -27,6 +27,8 @@ CACHE_DIR = ROOT / "runs" / "argon_cache"
 
 
 def _keys():
+    if os.environ.get("GEMINI_API_KEY"):
+        return {"env": os.environ["GEMINI_API_KEY"].strip()}
     keys = {}
     for line in pathlib.Path.home().joinpath("gemini-key.txt").read_text().splitlines():
         name, _, value = line.partition("=")
