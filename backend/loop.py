@@ -210,6 +210,19 @@ class Loop:
         self.worker_info = info
         return out
 
+    def diagonal_candidates(self):
+        """A: current. B: less basement water. C: more. Every setting moves in the direction that has that effect.
+        Used for the short live calibration, where the first big correction matters most."""
+        effects = json.loads((ROOT / "site" / "knob_effects.json").read_text())["less_water"]
+        less, more = dict(self.params), dict(self.params)
+        for k in numeric_knobs():
+            lo, hi = KNOBS[k]
+            v = self.params[k]
+            up, down = v + self.step * (hi - v), v - self.step * (v - lo)
+            less[k], more[k] = (up, down) if effects.get(k, 1) > 0 else (down, up)
+        self.current_knob = None
+        return {"A": dict(self.params), "B": less, "C": more}
+
     def numeric_candidates(self):
         """Coordinate search: each round moves one setting, cycling through them. A: current, B: that setting lower,
         C: that setting higher. Moving one at a time lets the search go in any direction, not only along one line."""
@@ -268,6 +281,8 @@ class Loop:
         changed = {k: v for k, v in chosen.items() if self.params.get(k) != v}
         if kind == "numeric" and winner == "A" and self.current_knob:
             self.steps[self.current_knob] = self.steps.get(self.current_knob, 0.4) * 0.5
+        if kind == "numeric" and winner == "A" and self.current_knob is None:
+            self.step *= 0.5
         self.params = dict(chosen)
         rows = [{"label": r.get("label"), "verdict": r.get("best"), "evidence": r.get("evidence")} for r in (res.get("rows") or [])]
         record = {"round": n, "kind": kind, "event": self.event, "scene": str(self.scene), "scene_sha": file_sha(self.scene),
@@ -336,8 +351,43 @@ def live_round(name, event=None, video=True):
     return rec
 
 
+def live_calibrate(name, rounds=2):
+    """Short live calibration for the demo: start from the untuned model in the scene a finished run already fixed,
+    and let Argon judge a few rounds of video. Writes to runs/loop/<name>_cal and freezes there."""
+    import shutil
+    from backend import videojudge
+    src = json.loads((RUNS / "loop" / name / "frozen.json").read_text())
+    cal = f"{name}_cal"
+    d = RUNS / "loop" / cal
+    if d.exists():
+        shutil.rmtree(d)
+    lp = Loop(src["event"], ROOT / src["scene"], cal, site=src.get("site"), params=None)
+    lp.params["basement_path"] = "sewer"
+    lp.patch = src.get("patch") or {}
+    lp.video = True
+    videojudge.STEP_S = 10
+    progress.report(d, "simulate", "Starting from the untuned model. Argon will watch the flood and correct it.", round=0)
+    records = []
+    try:
+        for n in range(1, rounds + 1):
+            rec = lp.judged_round(n, lp.diagonal_candidates(), "numeric")
+            rec["live"] = True
+            (d / f"round_{n:02d}" / "round.json").write_text(json.dumps(rec, indent=1, default=str))
+            records.append(rec)
+    finally:
+        lp.renderer.close()
+    frozen = {"scene": str(lp.scene), "scene_sha": file_sha(lp.scene), "patch": lp.patch, "params": lp.params,
+              "site": lp.site, "event": lp.event, "from_run": name}
+    frozen["sha"] = hashlib.sha256(json.dumps(frozen, sort_keys=True).encode()).hexdigest()[:12]
+    (d / "frozen.json").write_text(json.dumps(frozen, indent=1))
+    progress.report(d, "done", f"Model frozen ({frozen['sha']}). Ready to test on a flood it has never seen.", sha=frozen["sha"],
+                    params=lp.params)
+    return records, frozen
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--live-calibrate", metavar="NAME", help="short live calibration from the untuned model, in NAME's scene")
     ap.add_argument("--live", metavar="NAME", help="run one live judged round on top of a frozen run")
     ap.add_argument("--event", type=int, default=SPLIT["calibrate"])
     ap.add_argument("--scene", default="web/scene/r0_blind.js")
@@ -347,6 +397,10 @@ def main():
     ap.add_argument("--video", action="store_true", help="Argon judges a side-by-side video instead of still frames")
     ap.add_argument("--workers", action="store_true", help="hypothesis workers tune each path candidate before Argon judges")
     a = ap.parse_args()
+    if a.live_calibrate:
+        records, frozen = live_calibrate(a.live_calibrate, a.rounds)
+        print("live calibration", [r["winner"] for r in records], frozen["sha"], frozen["params"])
+        return
     if a.live:
         rec = live_round(a.live, video=a.video or True)
         print("live round", rec["round"], rec["winner"], rec["applied_knobs"], rec["seconds"])
