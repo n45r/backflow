@@ -11,6 +11,7 @@ import copy
 import hashlib
 import json
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from backend import argon, contact, data, sim
@@ -138,14 +139,18 @@ class Loop:
         return {L: dict(self.params, basement_path=p) for L, p in zip(LABELS, KNOBS["basement_path"])}
 
     def numeric_candidates(self):
+        """A: current. B: less basement water. C: more. Each knob moves in the direction that has that effect."""
+        effects = json.loads((ROOT / "site" / "knob_effects.json").read_text())["less_water"] if (ROOT / "site" / "knob_effects.json").exists() else {}
         cands = {"A": dict(self.params)}
-        lo_set, hi_set = dict(self.params), dict(self.params)
+        less, more = dict(self.params), dict(self.params)
         for k in numeric_knobs():
             lo, hi = KNOBS[k]
             v = self.params[k]
-            lo_set[k] = max(lo, v - self.step * (v - lo))
-            hi_set[k] = min(hi, v + self.step * (hi - v))
-        cands["B"], cands["C"] = lo_set, hi_set
+            sign = effects.get(k, 1)
+            toward_hi = v + self.step * (hi - v)
+            toward_lo = v - self.step * (v - lo)
+            less[k], more[k] = (toward_hi, toward_lo) if sign > 0 else (toward_lo, toward_hi)
+        cands["B"], cands["C"] = less, more
         return cands
 
     def judged_round(self, n, candidates, kind):
@@ -154,8 +159,13 @@ class Loop:
         t0 = time.time()
         depths, renders = {}, {}
         self.renderer.patch = self.patch
-        for L, p in candidates.items():
-            depths[L] = sim.run(self.site, p, self.event, f"loop_{self.dir.name}_r{n:02d}_{L}")
+        # PySWMM allows one simulation per process, so the candidates run in separate processes at once.
+        with ProcessPoolExecutor(max_workers=len(candidates)) as ex:
+            futs = {L: ex.submit(sim.run, self.site, p, self.event, f"loop_{self.dir.name}_r{n:02d}_{L}")
+                    for L, p in candidates.items()}
+            for L, f in futs.items():
+                depths[L] = f.result()
+        for L in candidates:
             renders[L] = self.renderer.render(self.scene_url, depths[L], CAM, self.times, out / f"render_{L}")
         t_sim = time.time()
         real = self.real_frames(out)

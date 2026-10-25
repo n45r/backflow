@@ -46,7 +46,7 @@ def _patch(tmp):
     argon.CALL_LOG = tmp / "argon_calls.jsonl"
     argon.LOCK_DIR = tmp / "slots"
     argon._keys = lambda: {"fake": "x"}
-    argon.client = lambda name=None: fake
+    argon.client = lambda *a, **k: fake
     return fake, saved
 
 

@@ -36,6 +36,15 @@ FIXED_DEFAULTS = {
     "r5_closed_offset_m": 99.0,        # orifice r5 raised out of reach when the sewer path is off
 }
 
+# Knobs in params.json that map onto template placeholders (null or absent keeps the FIXED_DEFAULTS value).
+# outlet_cd: orifice r4, the outflow from shaft s5 through valve v4 (cd_r4). Range 0.1-1.0; the upper end
+#   follows from the v4 flow factor at notch 8 (Kv 2100 m3/h) on the 0.234 m pipe p6.
+# p3_roughness: Manning n of pipe p3, m1 -> m2 (r_p3). Range 0.009-0.03 (cq-analysis bounds).
+# orifice_cd and weir_cd are kept for older params files; neither changes the basement depth.
+KNOB_PLACEHOLDERS = {"outlet_cd": "cd_r4", "p3_roughness": "r_p3", "orifice_cd": "cd_m3", "weir_cd": "cd_w1"}
+# p7_diameter_m: effective diameter of pipe p7, sewer -> basement manhole m3. Range 0.05-0.15 m;
+#   null keeps site.json pipe_p7_diameter_m (0.1472 m, the measured inner diameter).
+
 
 def sha(obj):
     if isinstance(obj, (str, Path)) and Path(obj).exists():
@@ -66,10 +75,11 @@ def build_inp(site, params, event, out_dir=None):
             fh.write(f"{t:%m/%d/%Y} {t:%H:%M:%S} {v:.3f}\n")
 
     fill = dict(FIXED_DEFAULTS)
-    if params.get("weir_cd") is not None:
-        fill["cd_w1"] = params["weir_cd"]
-    if params.get("orifice_cd") is not None:
-        fill["cd_m3"] = params["orifice_cd"]
+    for knob, placeholder in KNOB_PLACEHOLDERS.items():
+        if params.get(knob) is not None:
+            fill[placeholder] = params[knob]
+    p7_d = params.get("p7_diameter_m")
+    p7_d = site["pipe_p7_diameter_m"] if p7_d is None else p7_d
     fill.update(data.initial_conditions(event))
     fill.update({
         "forcing_data_file": str(forcing.resolve()),
@@ -80,8 +90,12 @@ def build_inp(site, params, event, out_dir=None):
     text = TEMPLATE.read_text()
     text = _swap(text, "w1               s3               virt2            TRANSVERSE   0.51 ",
                  f"w1               s3               virt2            TRANSVERSE   {site['weir_crest_m']} ")
-    text = _swap(text, "p7               CIRCULAR     0.1472", f"p7               CIRCULAR     {site['pipe_p7_diameter_m']}")
+    text = _swap(text, "p7               CIRCULAR     0.1472", f"p7               CIRCULAR     {p7_d}")
     text = _swap(text, "s6               418.44 ", f"s6               {site['basement_floor_m']} ")
+    # The s6 curve ends at 0.03 m and SWMM extrapolates the last segment, so the basement area kept growing
+    # (about 170 m2 at 0.12 m). The FloodX technical notes give a constant 43 m2; hold it flat above 0.03 m.
+    text = _swap(text, "storage_s6                  0.03       43.26\n",
+                 "storage_s6                  0.03       43.26\nstorage_s6                  1.0        43.26\n")
 
     if path_mode == "door":
         text = _swap(text, "r5               s6               m3               BOTTOM       0 ",

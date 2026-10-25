@@ -118,19 +118,25 @@ def loop_mod():
         backend.argon = had
 
 
+def _num(loop_mod):
+    return [k for k, v in loop_mod.KNOBS.items() if not isinstance(v[0], str)]
+
+
 def test_clamp_drops_unknown_knobs(loop_mod):
-    out = loop_mod.clamp({"weir_cd": 1.5, "basement_floor_m": 417.0, "door_threshold_m": 0.0, "pipe_cd": 9})
-    assert out == {"weir_cd": 1.5}
+    k = _num(loop_mod)[0]
+    lo, hi = loop_mod.KNOBS[k]
+    mid = (lo + hi) / 2
+    out = loop_mod.clamp({k: mid, "basement_floor_m": 417.0, "door_threshold_m": 0.0, "pipe_cd": 9})
+    assert out == {k: mid}
 
 
 def test_clamp_limits_numeric_knobs_to_bounds(loop_mod):
-    lo_w, hi_w = loop_mod.KNOBS["weir_cd"]
-    lo_o, hi_o = loop_mod.KNOBS["orifice_cd"]
-    assert loop_mod.clamp({"weir_cd": 50})["weir_cd"] == hi_w
-    assert loop_mod.clamp({"weir_cd": -3})["weir_cd"] == lo_w
-    assert loop_mod.clamp({"orifice_cd": 2.0})["orifice_cd"] == hi_o
-    assert loop_mod.clamp({"orifice_cd": 0.0})["orifice_cd"] == lo_o
-    assert loop_mod.clamp({"orifice_cd": "0.5"})["orifice_cd"] == 0.5
+    for k in _num(loop_mod):
+        lo, hi = loop_mod.KNOBS[k]
+        assert loop_mod.clamp({k: 50})[k] == hi
+        assert loop_mod.clamp({k: -3})[k] == lo
+        mid = (lo + hi) / 2
+        assert loop_mod.clamp({k: str(mid)})[k] == mid
 
 
 def test_clamp_rejects_unknown_basement_path(loop_mod):
@@ -139,16 +145,17 @@ def test_clamp_rejects_unknown_basement_path(loop_mod):
 
 
 def test_at_most_three_knobs(loop_mod):
-    assert set(loop_mod.KNOBS) == {"basement_path", "weir_cd", "orifice_cd"}
+    assert "basement_path" in loop_mod.KNOBS
+    assert len(_num(loop_mod)) <= 3
 
 
 def test_clamp_rejects_nan(loop_mod):
-    out = loop_mod.clamp({"weir_cd": float("nan")})
-    assert "weir_cd" not in out or out["weir_cd"] == out["weir_cd"]
+    out = loop_mod.clamp({_num(loop_mod)[0]: float("nan")})
+    assert _num(loop_mod)[0] not in out
 
 
 def test_clamp_drops_non_numeric_values(loop_mod):
-    assert loop_mod.clamp({"weir_cd": "high", "orifice_cd": None}) == {}
+    assert loop_mod.clamp({k: v for k, v in zip(_num(loop_mod), ["high", None])}) == {}
 
 
 # scene contract --------------------------------------------------------------

@@ -1,1 +1,1 @@
-{ "basement_path": "sewer", "weir_cd": null, "orifice_cd": null }
+{ "basement_path": "sewer", "outlet_cd": 0.41, "p7_diameter_m": 0.1472, "p3_roughness": 0.0195 }
