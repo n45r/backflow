@@ -77,8 +77,8 @@ def main(run="calib_video", out_name="reveal_seq.mp4"):
         if final:
             dr.rectangle([0, cy0 - 70, W, H], fill=BG)
             f60, f30 = _font(64), _font(32)
-            l1 = "Off by 34 mm before.   Off by 6 mm after."
-            l2 = "6 mm is within the range of the researchers' own sensor-based tuning."
+            l1 = "More than 5 times more accurate"
+            l2 = "after watching one flood. In the range researchers get with water sensors."
             dr.text(((W - dr.textlength(l1, font=f60)) / 2, cy0 + 40), l1, fill=INK, font=f60)
             dr.text(((W - dr.textlength(l2, font=f30)) / 2, cy0 + 150), l2, fill=QUIET, font=f30)
         return im
