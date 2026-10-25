@@ -209,14 +209,35 @@ class Loop:
         return records, frozen
 
 
+def live_round(name, event=None):
+    """One more judged round from the frozen state of an earlier run, for the live demo segment."""
+    d = RUNS / "loop" / name
+    frozen = json.loads((d / "frozen.json").read_text())
+    lp = Loop(event or frozen["event"], ROOT / frozen["scene"], name, site=frozen.get("site"), params=frozen["params"])
+    lp.patch = frozen.get("patch") or {}
+    n = len(list(d.glob("round_*/round.json")))
+    try:
+        rec = lp.judged_round(n, lp.numeric_candidates(), "numeric")
+    finally:
+        lp.renderer.close()
+    rec["live"] = True
+    (d / f"round_{n:02d}" / "round.json").write_text(json.dumps(rec, indent=1, default=str))
+    return rec
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--live", metavar="NAME", help="run one live judged round on top of a frozen run")
     ap.add_argument("--event", type=int, default=SPLIT["calibrate"])
     ap.add_argument("--scene", default="web/scene/r0_blind.js")
     ap.add_argument("--name", default="calib")
     ap.add_argument("--rounds", type=int, default=3, help="numeric rounds after the path round")
     ap.add_argument("--no-structure", action="store_true")
     a = ap.parse_args()
+    if a.live:
+        rec = live_round(a.live)
+        print("live round", rec["round"], rec["winner"], rec["applied_knobs"], rec["seconds"])
+        return
     records, frozen = Loop(a.event, ROOT / a.scene, a.name).run(a.rounds, structure=not a.no_structure)
     for r in records:
         print(r["round"], r["kind"], r.get("winner"), r["applied_knobs"], r.get("scene_changed"), r["seconds"])
