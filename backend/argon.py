@@ -1,5 +1,6 @@
 """Calls to Gemini 4 Argon: scene generation, scene patches and visual critique."""
 import fcntl
+import hashlib
 import json
 import os
 import pathlib
@@ -22,6 +23,7 @@ KEY_NAMES = ("workshop", "default")
 MAX_CONCURRENT_PER_KEY = int(os.environ.get("ARGON_MAX_CONCURRENT", "3"))
 LOCK_DIR = ROOT / "runs" / ".argon_slots"
 CALL_LOG = ROOT / "runs" / "argon_calls.jsonl"
+CACHE_DIR = ROOT / "runs" / "argon_cache"
 
 
 def _keys():
@@ -85,6 +87,35 @@ def _file_part(path):
     return types.Part.from_bytes(data=path.read_bytes(), mime_type=mime)
 
 
+class CacheMiss(RuntimeError):
+    pass
+
+
+def _cache_key(model, config, parts):
+    """Stable hash of model, config and every part's text or bytes."""
+    h = hashlib.sha256()
+    h.update(model.encode())
+    h.update(config.model_dump_json(exclude_none=True).encode())
+    for part in parts:
+        if isinstance(part, str):
+            h.update(b"str:" + part.encode())
+        elif getattr(part, "inline_data", None) is not None:
+            h.update(b"bytes:" + (part.inline_data.mime_type or "").encode() + b":")
+            h.update(hashlib.sha256(part.inline_data.data or b"").digest())
+        elif getattr(part, "text", None) is not None:
+            h.update(b"text:" + part.text.encode())
+        else:
+            h.update(b"json:" + part.model_dump_json(exclude_none=True).encode())
+    return h.hexdigest()[:32]
+
+
+def _cache_write(key, text, usage):
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = CACHE_DIR / f"{key}.json.tmp"
+    tmp.write_text(json.dumps({"model": MODEL, "text": text, "usage": usage, "t": round(time.time())}, default=str))
+    tmp.replace(CACHE_DIR / f"{key}.json")
+
+
 def ask(parts, thinking="high", max_output_tokens=65536, media_resolution=None, attempts=4):
     """One call with a concurrency slot, retries and a log line. Returns (text, usage dict, seconds)."""
     config = types.GenerateContentConfig(
@@ -92,6 +123,19 @@ def ask(parts, thinking="high", max_output_tokens=65536, media_resolution=None, 
         thinking_config=types.ThinkingConfig(thinking_level=thinking),
         media_resolution=f"MEDIA_RESOLUTION_{media_resolution.upper()}" if media_resolution else None,
     )
+    mode = os.environ.get("ARGON_CACHE", "").strip().lower()
+    if mode not in ("", "record", "replay"):
+        raise ValueError(f"ARGON_CACHE must be record, replay or unset, not {mode!r}")
+    key = _cache_key(MODEL, config, parts) if mode else None
+    if mode == "replay":
+        path = CACHE_DIR / f"{key}.json"
+        if not path.exists():
+            raise CacheMiss(f"ARGON_CACHE=replay but no cached response {path}. "
+                            "Record it during rehearsal with ARGON_CACHE=record, or unset ARGON_CACHE to call live.")
+        hit = json.loads(path.read_text())
+        _log({"t": round(time.time()), "key": None, "ok": True, "replay": True, "cache": key,
+              "out_tokens": (hit.get("usage") or {}).get("candidates_token_count")})
+        return hit["text"], hit.get("usage") or {}, 0.0
     start = time.time()
     last = None
     for attempt in range(attempts):
@@ -102,11 +146,18 @@ def ask(parts, thinking="high", max_output_tokens=65536, media_resolution=None, 
                 usage = resp.usage_metadata.model_dump() if resp.usage_metadata else {}
                 _log({"t": round(t0), "key": slot.key, "ok": True, "attempt": attempt, "wait_s": round(t0 - start, 1),
                       "call_s": round(time.time() - t0, 1), "out_tokens": usage.get("candidates_token_count")})
-                return resp.text or "", usage, round(time.time() - start, 1)
+                text = resp.text or ""
             except Exception as e:
                 last = e
                 _log({"t": round(t0), "key": slot.key, "ok": False, "attempt": attempt,
                       "call_s": round(time.time() - t0, 1), "error": f"{type(e).__name__}: {str(e)[:200]}"})
+            else:
+                if mode == "record":
+                    try:
+                        _cache_write(key, text, usage)
+                    except Exception as e:
+                        print(f"argon cache write failed for {key}: {type(e).__name__}: {e}")
+                return text, usage, round(time.time() - start, 1)
         time.sleep(min(60, 4 * 2 ** attempt))
     raise last
 
