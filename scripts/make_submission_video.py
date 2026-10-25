@@ -19,16 +19,35 @@ def ff(*args):
 
 
 def card(img_path, out, title=None, fit=True):
-    canvas = Image.new("RGB", (W, H), (12, 12, 16))
+    """Minimal card: near-black background, one quiet caption, the image as the hero."""
+    canvas = Image.new("RGB", (W, H), (11, 11, 12))
+    top = 150 if title else 0
     if img_path:
         im = Image.open(img_path).convert("RGB")
-        top = 120 if title else 0
-        scale = min(W / im.width, (H - top) / im.height) if fit else 1
+        scale = min((W - 160) / im.width, (H - top - 80) / im.height) if fit else 1
         im = im.resize((int(im.width * scale), int(im.height * scale)))
-        canvas.paste(im, ((W - im.width) // 2, top + (H - top - im.height) // 2))
+        canvas.paste(im, ((W - im.width) // 2, top + (H - top - 80 - im.height) // 2))
     if title:
         d = ImageDraw.Draw(canvas)
-        d.text((60, 36), title, fill="white", font=_font(52))
+        f = _font(44)
+        w = d.textlength(title, font=f)
+        d.text(((W - w) / 2, 70), title, fill=(235, 235, 235), font=f)
+    canvas.save(out)
+    return out
+
+
+def triptych(paths, labels, out):
+    """Images side by side with small quiet labels under each."""
+    ims = [Image.open(p).convert("RGB") for p in paths]
+    cw = (W - 160 - 2 * 24) // len(ims)
+    ims = [im.resize((cw, int(im.height * cw / im.width))) for im in ims]
+    h = max(im.height for im in ims)
+    canvas = Image.new("RGB", (W - 160, h + 56), (11, 11, 12))
+    d = ImageDraw.Draw(canvas)
+    for i, (im, lab) in enumerate(zip(ims, labels)):
+        x = i * (cw + 24)
+        canvas.paste(im, (x, 0))
+        d.text((x, h + 16), lab, fill=(160, 160, 165), font=_font(26))
     canvas.save(out)
     return out
 

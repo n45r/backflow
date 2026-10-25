@@ -242,7 +242,9 @@ class Loop:
         if self.video:
             from backend import videojudge
             start, end = self.video_window()
-            progress.report(self.dir, "render", f"Round {n}: drawing each version in Argon's 3D scene, from the real camera's view", round=n)
+            progress.report(self.dir, "render", f"Round {n}: drawing each version in Argon's 3D scene, from the real camera's view", round=n,
+                            depths={L: str(Path(depths[L]).relative_to(ROOT)) for L in depths}, scene=self.scene_url,
+                            patch=self.patch, window=[start, end], event=self.event, candidates=candidates)
             video, sheet = videojudge.build_video(self.renderer, self.scene_url, depths, self.event, CAM, start, end, out)
             progress.report(self.dir, "upload", f"Round {n}: sending Argon a {round((end - start) / 60)}-minute time-lapse, real flood beside the 3 versions",
                             round=n, video=video)
