@@ -1,21 +1,24 @@
 # Backflow: 1-minute video script
 
-Timed to `runs/submission/backflow_v4_for_voiceover.mp4` (57 s). Written for a fast speaker.
+About 200 words, for a fast speaker. Record it at your own pace; the video gets re-timed to your voice afterwards.
 
-**0:00 – 0:06** (cameras, site plan)
-Cities plan their drains with flood simulations. But checking them needs sensors in the sewer, which almost nobody has. Floods get filmed all the time.
+**Cameras**
+This is a real flood test site in Switzerland: a pond, channels, a sewer and a building. Researchers flood it on purpose and film it from several cameras.
 
-**0:06 – 0:14** (3D site, drain fix)
-Gemini 4 Argon read the site plan and built the whole site in 3D. Comparing it with the camera, it spotted a missing drain and fixed its own code.
+**The problem** (still over the cameras and the drawing)
+Engineers predict floods with drainage simulations. But some of their settings can't be measured, so they're guessed. Checking those guesses needs sensors in the sewer, which almost nobody has. Video is everywhere.
 
-**0:14 – 0:20** (Managed Agents)
-Three Managed Agents each take one theory of how the water gets in, and tune the simulation for it in their own cloud sandbox.
+**Argon builds the site**
+We gave Gemini 4 Argon the site's engineering drawing. It built the whole site in 3D, compared it with the real camera, spotted a missing drain, and fixed its own code.
 
-**0:20 – 0:35** (the core loop)
-Now the core loop. A drainage simulation makes three versions of the flood: A, B and C. Each is drawn in Argon's 3D scene from the real camera's angle, and stitched beside the real footage. Argon watches the whole flood, picks the closest, and says what's still wrong. The settings move toward its pick, and it repeats. Only video. No sensors.
+**Managed Agents**
+Then Managed Agents each test one theory of how the water gets into the building, running the simulation in their own cloud sandbox.
 
-**0:35 – 0:51** (the test)
-Then we freeze the model and test it on a different flood it has never seen. Before tuning, it was off by 34 millimetres of water. After watching one flood, it's off by 6, and the peak is within 5 millimetres. That's within the range of the original researchers, who tuned with sewer sensors.
+**The core loop**
+Now the core loop. The simulation predicts the flood three ways: A, B and C. Each one is drawn in Argon's 3D site, from the real camera's angle, right next to the real footage. Argon watches the whole flood, picks the version closest to reality, and says what's still off. The settings move toward its pick, and it goes again. Only video. No sensors.
 
-**0:51 – 0:57** (end)
-Backflow. Flood video in, a checked flood model out. Built with Gemini 4 Argon and Managed Agents.
+**The test**
+Then the real test: a different flood the model has never seen. After Argon watched just one flood, the prediction became more than five times more accurate. That's in the same range researchers get by tuning with sewer sensors.
+
+**End**
+Backflow. Flood video in, a flood model you can trust out.
