@@ -62,6 +62,7 @@ def _check_frame(path):
 class Renderer:
     def __init__(self, width=854, height=480):
         self.site = {}
+        self.patch = {}
         self.w, self.h = width, height
         self.pw = self.browser = self.page = None
         self.scene_url = None
@@ -72,8 +73,24 @@ class Renderer:
         self.browser = self.pw.chromium.launch(headless=True, args=args)
         self.page = self.browser.new_page(viewport={"width": self.w, "height": self.h})
         self.page.on("pageerror", lambda e: print("page error:", e))
-        self.page.goto(BASE + "/index.html", wait_until="load")
-        self.page.wait_for_function("typeof window.loadScene === 'function'", timeout=30000)
+        self._goto_harness()
+
+    def _goto_harness(self, attempts=3):
+        """Load the harness page, retrying with backoff; the page and Three.js are served locally."""
+        last = None
+        for i in range(attempts):
+            try:
+                self.page.goto(BASE + "/index.html", wait_until="load", timeout=20000)
+                self.page.wait_for_function("typeof window.loadScene === 'function'", timeout=30000)
+                return
+            except Exception as e:
+                last = e
+                print(f"harness load failed (attempt {i + 1}/{attempts}): {type(e).__name__}: {str(e)[:200]}")
+                if i < attempts - 1:
+                    time.sleep(2 * 2 ** i)
+        raise RuntimeError(
+            f"could not load the harness at {BASE}/index.html after {attempts} attempts. "
+            f"Check that the server is running and web/vendor/three/build/three.module.js exists. Last error: {last}")
 
     def start(self):
         from playwright.sync_api import sync_playwright
@@ -112,6 +129,7 @@ class Renderer:
         for attempt in range(2):
             try:
                 self._load(scene_url, depths_path_or_dict)
+                self.page.evaluate("p => window.applyPatch(p)", self.patch)
                 self.page.evaluate("c => window.setCamera(c)", cam)
                 paths = []
                 for t in times_s:
@@ -133,3 +151,10 @@ class Renderer:
         if self.pw:
             self.pw.stop()
         self.page = self.browser = self.pw = None
+
+
+    def describe(self, scene_url):
+        if self.page is None:
+            self.start()
+        self._load(scene_url, {"t": [0], "depth_m": {}})
+        return self.page.evaluate("() => window.describeScene()")

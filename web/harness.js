@@ -235,3 +235,38 @@ window.setCamera = function (name) {
 };
 
 window.renderNow = renderNow;
+
+// Small scene patches: camera poses, named object transforms, basement water anchors.
+// Water heights still come only from depths; a patch can move where water may sit, never how much.
+window.applyPatch = function (patch = {}) {
+  for (const [name, c] of Object.entries(patch.cameras || {})) {
+    camDefs[name] = { ...(camDefs[name] || {}), ...c };
+  }
+  for (const [name, o] of Object.entries(patch.objects || {})) {
+    const obj = sceneRoot && sceneRoot.getObjectByName(name);
+    if (!obj) continue;
+    if (o.position) obj.position.set(...o.position);
+    if (o.rotation) obj.rotation.set(...o.rotation);
+    if (o.scale) obj.scale.set(...o.scale);
+    if (o.visible !== undefined) obj.visible = o.visible;
+  }
+  const b = patch.water && patch.water.basement;
+  if (b && spec && spec.water && spec.water.basement) {
+    for (const k of ['slope', 'drain_xz', 'floor_y', 'outline']) if (b[k] !== undefined) spec.water.basement[k] = b[k];
+  }
+  if (camName && camDefs[camName]) window.setCamera(camName);
+  renderNow();
+};
+
+// What a patch can address: cameras and named objects with their current transforms.
+window.describeScene = function () {
+  const objects = {};
+  if (sceneRoot) sceneRoot.traverse(o => {
+    if (o.name && o !== sceneRoot) objects[o.name] = {
+      position: o.position.toArray().map(v => +v.toFixed(3)),
+      rotation: [o.rotation.x, o.rotation.y, o.rotation.z].map(v => +v.toFixed(3)),
+      scale: o.scale.toArray().map(v => +v.toFixed(3)),
+    };
+  });
+  return { cameras: camDefs, objects, water: spec ? spec.water : null };
+};

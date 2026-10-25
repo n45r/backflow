@@ -11,7 +11,7 @@ PARAMS_JSON = ROOT / "site" / "params.json"
 RUNS = ROOT / "runs"
 EVALUATION = ROOT / "evaluation"
 
-SPLIT = {"calibrate": 20, "holdout": 32, "dry": 21}
+SPLIT = {"calibrate": 32, "holdout": 20, "dry": 21}
 DT_S = 10
 
 GAUGE_SOURCES = {"s3": "s3_h_us_maxbotix", "s6": "s6_h_us_maxbotix"}

@@ -4,6 +4,6 @@
   "basement_floor_m": 418.44,
   "pipe_p7_diameter_m": 0.1472,
   "pond_area_m2": 8.5,
-  "basement_floor_slope": 0.0,
-  "basement_drain_xy": [-0.37, -2.28]
+  "basement_floor_slope": null,
+  "basement_drain_xy": null
 }
