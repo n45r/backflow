@@ -283,9 +283,18 @@ Reply with JSON only:
  "confidence": 0.0-1.0}"""
 
 
+def _compact(description):
+    """Cameras and water anchors in full; objects only by name, plus positions of the basement-related ones."""
+    objs = description.get("objects") or {}
+    key = {n: o["position"] for n, o in objs.items()
+           if any(s in n.lower() for s in ("basement", "drain", "m3", "door", "stair", "s6"))}
+    return {"cameras": description.get("cameras"), "water": description.get("water"),
+            "basement_objects": key, "other_object_names": sorted(set(objs) - set(key))[:80]}
+
+
 def scene_fix(sheet_path, description):
-    text = SCENE_FIX_BRIEF + "\n\nCurrent scene description:\n" + json.dumps(description)[:60000]
+    text = SCENE_FIX_BRIEF + "\n\nCurrent scene description:\n" + json.dumps(_compact(description))
     reply, usage, secs = ask([_file_part(sheet_path), types.Part.from_text(text=text)],
-                             thinking="high", max_output_tokens=65536, media_resolution="high")
+                             thinking="low", max_output_tokens=65536, media_resolution="high", timeout_s=420)
     m = re.search(r"\{.*\}", reply, re.S)
     return {"result": json.loads(m.group(0)) if m else {"raw": reply}, "usage": usage, "seconds": secs}
