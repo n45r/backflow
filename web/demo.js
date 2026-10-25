@@ -4,6 +4,9 @@ const RUN_PARAM = qs.get('run');
 const RUN = RUN_PARAM || 'calib_video';
 const LIVE_FROM = qs.has('live') ? Number(qs.get('live')) : Infinity;
 const PAGE_LOADED = Date.now() / 1000;
+// The hosted copy has no server. The exported demo.html sets this, and every /api call reads a recorded JSON file instead.
+const STATIC = window.BACKFLOW_STATIC === true;
+const RECORDED_LABEL = 'Recorded run, replayed in your browser';
 const HW = 854, HH = 480;
 const CAM_NAMES = { cam1: 'Pond and weir', cam5: 'Basement' };
 
@@ -20,7 +23,13 @@ let viewToken = 0;
 let lastFrame = 0;
 let renderedT = -1;
 
+function staticUrl(url) {
+  // /api/loop/x -> api/loop/x.json, relative so it works under a sub-path such as /backflow/
+  return url.split('?')[0].replace(/^\//, '') + '.json';
+}
+
 async function getJSON(url) {
+  if (STATIC && url.startsWith('/api/')) url = staticUrl(url);
   const r = await fetch(url, { cache: 'no-store' });
   if (!r.ok) throw new Error(`${url}: ${r.status}`);
   return r.json();
@@ -39,6 +48,7 @@ function fmt(s) {
 }
 
 function isLive(r) {
+  if (STATIC) return false;
   return r.live || r.round >= LIVE_FROM || r.mtime > PAGE_LOADED;
 }
 
@@ -545,7 +555,7 @@ async function loadRun() {
 }
 
 async function poll() {
-  if (!state.data) return;
+  if (STATIC || !state.data) return;
   try {
     const data = await getJSON(`/api/loop/${encodeURIComponent(state.run)}`);
     const had = state.data.rounds.length;
@@ -653,7 +663,7 @@ function setLiveVideo(path) {
   live.videoSeenAt = performance.now();
   const v = $('liveVideo');
   $('liveVideoErr').hidden = true;
-  v.src = `/api/video?path=${encodeURIComponent(path)}`;
+  v.src = STATIC ? path : `/api/video?path=${encodeURIComponent(path)}`;
   v.playbackRate = 2;
   v.play().catch(() => {});
   $('live').dataset.vid = '1';
@@ -705,10 +715,18 @@ function showVerdict(entry, cands) {
 
 function renderLive(r) {
   live.replay = !!r.replay;
-  $('modeBadge').textContent = live.replay ? 'Offline replay' : 'Live';
-  $('modeBadge').classList.toggle('replay', live.replay);
-  $('modeBadge').classList.toggle('live', !live.replay);
-  $('runNote').textContent = live.replay ? 'Replays a recorded answer, no network needed' : `Run ${state.run}, about a minute`;
+  if (STATIC) {
+    $('modeBadge').textContent = 'Recorded';
+    $('modeBadge').classList.add('replay');
+    $('modeBadge').classList.remove('live');
+    $('runNote').textContent = RECORDED_LABEL;
+    $('staticLabel').hidden = false;
+  } else {
+    $('modeBadge').textContent = live.replay ? 'Offline replay' : 'Live';
+    $('modeBadge').classList.toggle('replay', live.replay);
+    $('modeBadge').classList.toggle('live', !live.replay);
+    $('runNote').textContent = live.replay ? 'Replays a recorded answer, no network needed' : `Run ${state.run}, about a minute`;
+  }
   if (!r.started_here) return;
   // A page opened fresh shows the start button. It only picks up a round that is still running.
   if (!live.active) { if (!r.running) return; live.active = true; live.sawRunning = false; }
@@ -780,6 +798,12 @@ function stopTimer() {
 }
 
 async function pollLive() {
+  if (STATIC) {
+    // No server to poll. Load the recorded round once and wait for the button.
+    try { replay.prog = (await getJSON(`/api/progress/${encodeURIComponent(state.run)}`)).progress; } catch (e) { replay.prog = null; }
+    renderLive({ replay: false, started_here: false });
+    return;
+  }
   try {
     const r = await getJSON(`/api/progress/${encodeURIComponent(state.run)}`);
     renderLive(r);
@@ -787,6 +811,28 @@ async function pollLive() {
   } catch (e) { /* server busy */ }
   const busy = live.phase === 'running';
   setTimeout(pollLive, busy ? 700 : 3000);
+}
+
+/* Static mode: play the recorded log back with its original timings. Each log entry carries `at`, seconds from the round start. */
+const replay = { prog: null, timer: null };
+
+function startStaticRound() {
+  const prog = replay.prog;
+  if (!prog || !(prog.log || []).length) { showError('The recorded round is not available.', []); return; }
+  if (replay.timer) clearInterval(replay.timer);
+  const t0 = performance.now();
+  const step = () => {
+    const el = (performance.now() - t0) / 1000;
+    const log = prog.log.filter(e => (e.at || 0) <= el);
+    const done = log.some(e => e.stage === 'verdict');
+    renderLive({
+      replay: false, started_here: true, running: !done, started: 'static', elapsed: el,
+      exit_code: done ? 0 : null, progress: { log, current: log[log.length - 1] || null },
+    });
+    if (done) { clearInterval(replay.timer); replay.timer = null; }
+  };
+  replay.timer = setInterval(step, 250);
+  step();
 }
 
 async function startRound() {
@@ -799,6 +845,7 @@ async function startRound() {
   railShow(false, 0);
   setLiveState('running');
   startTimer(0);
+  if (STATIC) { startStaticRound(); return; }
   try {
     const res = await fetch(`/api/live/${encodeURIComponent(state.run)}`, { method: 'POST' });
     if (res.ok) live.expect = (await res.json()).started_at;
@@ -844,4 +891,4 @@ railShow(false, -1);
 fitHarness();
 requestAnimationFrame(tick);
 boot();
-setInterval(poll, 4000);
+if (!STATIC) setInterval(poll, 4000);

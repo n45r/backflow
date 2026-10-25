@@ -1,5 +1,7 @@
 # Backflow
 
+Live demo: https://n45r.github.io/backflow/ (a recorded run, replayed in your browser, no server needed)
+
 Cities use computer models to decide where to spend money on drains, flood walls and basement protection, but those models are often never checked against a real flood, because measuring floods is expensive. Cameras are cheap, and many already point at places that flood. Backflow is an agent that watches real flood video, builds a 3D scene of the site whose water comes only from a drainage simulation, and fixes the simulation until its render matches the video. It then predicts a flood it has never seen, and that prediction is scored against water-level sensors the agent never saw.
 
 Headline: using only camera video, Backflow corrected a flood model about as well as the researchers' own sensor-based calibrations, and its prediction held on a flood it never saw. The inflow is a measured input and the model structure comes from the researchers' published template, so this is calibration, not prediction from video alone.
