@@ -1,0 +1,488 @@
+[
+ {
+  "seq": "ABBB",
+  "mae_mm": 2.6,
+  "peak_err_mm": -15.1,
+  "wet": true
+ },
+ {
+  "seq": "BAAB",
+  "mae_mm": 2.6,
+  "peak_err_mm": -12.7,
+  "wet": true
+ },
+ {
+  "seq": "BBCB",
+  "mae_mm": 2.9,
+  "peak_err_mm": -16.3,
+  "wet": true
+ },
+ {
+  "seq": "CCBB",
+  "mae_mm": 3.0,
+  "peak_err_mm": -17.5,
+  "wet": true
+ },
+ {
+  "seq": "BABA",
+  "mae_mm": 3.1,
+  "peak_err_mm": -17.6,
+  "wet": true
+ },
+ {
+  "seq": "CBBA",
+  "mae_mm": 3.6,
+  "peak_err_mm": -21.3,
+  "wet": true
+ },
+ {
+  "seq": "BAAA",
+  "mae_mm": 3.8,
+  "peak_err_mm": -8.3,
+  "wet": true
+ },
+ {
+  "seq": "CBAB",
+  "mae_mm": 4.3,
+  "peak_err_mm": -9.3,
+  "wet": true
+ },
+ {
+  "seq": "BCBA",
+  "mae_mm": 4.5,
+  "peak_err_mm": -9.3,
+  "wet": true
+ },
+ {
+  "seq": "BBAC",
+  "mae_mm": 4.7,
+  "peak_err_mm": -8.1,
+  "wet": true
+ },
+ {
+  "seq": "ABBA",
+  "mae_mm": 5.2,
+  "peak_err_mm": -4.8,
+  "wet": true
+ },
+ {
+  "seq": "BACB",
+  "mae_mm": 5.9,
+  "peak_err_mm": -5.1,
+  "wet": true
+ },
+ {
+  "seq": "CBCB",
+  "mae_mm": 7.1,
+  "peak_err_mm": -4.3,
+  "wet": true
+ },
+ {
+  "seq": "BAAC",
+  "mae_mm": 8.9,
+  "peak_err_mm": 1.4,
+  "wet": true
+ },
+ {
+  "seq": "BABC",
+  "mae_mm": 9.3,
+  "peak_err_mm": 1.9,
+  "wet": true
+ },
+ {
+  "seq": "ABAB",
+  "mae_mm": 9.8,
+  "peak_err_mm": 3.6,
+  "wet": true
+ },
+ {
+  "seq": "ACBB",
+  "mae_mm": 9.9,
+  "peak_err_mm": 3.6,
+  "wet": true
+ },
+ {
+  "seq": "BCCB",
+  "mae_mm": 11.3,
+  "peak_err_mm": 6.4,
+  "wet": true
+ },
+ {
+  "seq": "CBAA",
+  "mae_mm": 11.3,
+  "peak_err_mm": 6.9,
+  "wet": true
+ },
+ {
+  "seq": "BBBC",
+  "mae_mm": 12.5,
+  "peak_err_mm": 10.2,
+  "wet": true
+ },
+ {
+  "seq": "ABCB",
+  "mae_mm": 12.6,
+  "peak_err_mm": 10.6,
+  "wet": true
+ },
+ {
+  "seq": "CABB",
+  "mae_mm": 13.9,
+  "peak_err_mm": 14.7,
+  "wet": true
+ },
+ {
+  "seq": "BCAB",
+  "mae_mm": 14.2,
+  "peak_err_mm": 15.5,
+  "wet": true
+ },
+ {
+  "seq": "BACA",
+  "mae_mm": 14.3,
+  "peak_err_mm": 15.8,
+  "wet": true
+ },
+ {
+  "seq": "ABAA",
+  "mae_mm": 14.5,
+  "peak_err_mm": 15.7,
+  "wet": true
+ },
+ {
+  "seq": "AABB",
+  "mae_mm": 15.2,
+  "peak_err_mm": 17.8,
+  "wet": true
+ },
+ {
+  "seq": "CCBA",
+  "mae_mm": 15.4,
+  "peak_err_mm": 19.8,
+  "wet": true
+ },
+ {
+  "seq": "ABBC",
+  "mae_mm": 16.3,
+  "peak_err_mm": 22.2,
+  "wet": true
+ },
+ {
+  "seq": "BBCA",
+  "mae_mm": 17.0,
+  "peak_err_mm": 24.2,
+  "wet": true
+ },
+ {
+  "seq": "CCCB",
+  "mae_mm": 18.0,
+  "peak_err_mm": 26.8,
+  "wet": true
+ },
+ {
+  "seq": "ABAC",
+  "mae_mm": 20.0,
+  "peak_err_mm": 32.8,
+  "wet": true
+ },
+ {
+  "seq": "CBBC",
+  "mae_mm": 20.5,
+  "peak_err_mm": 32.0,
+  "wet": true
+ },
+ {
+  "seq": "ACBA",
+  "mae_mm": 21.0,
+  "peak_err_mm": 35.6,
+  "wet": true
+ },
+ {
+  "seq": "CBAC",
+  "mae_mm": 21.3,
+  "peak_err_mm": 35.2,
+  "wet": true
+ },
+ {
+  "seq": "AABA",
+  "mae_mm": 22.0,
+  "peak_err_mm": 37.9,
+  "wet": true
+ },
+ {
+  "seq": "BACC",
+  "mae_mm": 26.1,
+  "peak_err_mm": 46.3,
+  "wet": true
+ },
+ {
+  "seq": "ABCA",
+  "mae_mm": 27.4,
+  "peak_err_mm": 50.3,
+  "wet": true
+ },
+ {
+  "seq": "AAAB",
+  "mae_mm": 27.5,
+  "peak_err_mm": 51.2,
+  "wet": true
+ },
+ {
+  "seq": "AACB",
+  "mae_mm": 27.5,
+  "peak_err_mm": 51.2,
+  "wet": true
+ },
+ {
+  "seq": "ACCB",
+  "mae_mm": 28.7,
+  "peak_err_mm": 52.2,
+  "wet": true
+ },
+ {
+  "seq": "BCBC",
+  "mae_mm": 28.7,
+  "peak_err_mm": 49.0,
+  "wet": true
+ },
+ {
+  "seq": "AABC",
+  "mae_mm": 29.2,
+  "peak_err_mm": 54.7,
+  "wet": true
+ },
+ {
+  "seq": "CABA",
+  "mae_mm": 29.9,
+  "peak_err_mm": 54.8,
+  "wet": true
+ },
+ {
+  "seq": "BCAA",
+  "mae_mm": 30.2,
+  "peak_err_mm": 54.6,
+  "wet": true
+ },
+ {
+  "seq": "ACAB",
+  "mae_mm": 32.9,
+  "peak_err_mm": 62.9,
+  "wet": true
+ },
+ {
+  "seq": "AAAA",
+  "mae_mm": 33.5,
+  "peak_err_mm": 64.9,
+  "wet": true
+ },
+ {
+  "seq": "ACBC",
+  "mae_mm": 34.6,
+  "peak_err_mm": 65.4,
+  "wet": true
+ },
+ {
+  "seq": "AAAC",
+  "mae_mm": 36.4,
+  "peak_err_mm": 71.7,
+  "wet": true
+ },
+ {
+  "seq": "CACB",
+  "mae_mm": 36.7,
+  "peak_err_mm": 66.9,
+  "wet": true
+ },
+ {
+  "seq": "AACA",
+  "mae_mm": 39.0,
+  "peak_err_mm": 78.4,
+  "wet": true
+ },
+ {
+  "seq": "CBCA",
+  "mae_mm": 39.5,
+  "peak_err_mm": 71.1,
+  "wet": true
+ },
+ {
+  "seq": "ABCC",
+  "mae_mm": 42.4,
+  "peak_err_mm": 79.9,
+  "wet": true
+ },
+ {
+  "seq": "CCAB",
+  "mae_mm": 43.3,
+  "peak_err_mm": 78.6,
+  "wet": true
+ },
+ {
+  "seq": "CABC",
+  "mae_mm": 44.2,
+  "peak_err_mm": 83.2,
+  "wet": true
+ },
+ {
+  "seq": "BCAC",
+  "mae_mm": 46.2,
+  "peak_err_mm": 82.9,
+  "wet": true
+ },
+ {
+  "seq": "CCBC",
+  "mae_mm": 46.5,
+  "peak_err_mm": 82.5,
+  "wet": true
+ },
+ {
+  "seq": "BBCC",
+  "mae_mm": 47.5,
+  "peak_err_mm": 85.5,
+  "wet": true
+ },
+ {
+  "seq": "CAAB",
+  "mae_mm": 47.5,
+  "peak_err_mm": 88.7,
+  "wet": true
+ },
+ {
+  "seq": "AACC",
+  "mae_mm": 48.0,
+  "peak_err_mm": 94.7,
+  "wet": true
+ },
+ {
+  "seq": "ACAA",
+  "mae_mm": 48.8,
+  "peak_err_mm": 96.3,
+  "wet": true
+ },
+ {
+  "seq": "ACAC",
+  "mae_mm": 57.2,
+  "peak_err_mm": 109.8,
+  "wet": true
+ },
+ {
+  "seq": "BCCA",
+  "mae_mm": 63.0,
+  "peak_err_mm": 114.5,
+  "wet": true
+ },
+ {
+  "seq": "ACCA",
+  "mae_mm": 65.6,
+  "peak_err_mm": 123.8,
+  "wet": true
+ },
+ {
+  "seq": "CAAA",
+  "mae_mm": 69.8,
+  "peak_err_mm": 130.8,
+  "wet": true
+ },
+ {
+  "seq": "CBCC",
+  "mae_mm": 74.9,
+  "peak_err_mm": 129.4,
+  "wet": true
+ },
+ {
+  "seq": "CAAC",
+  "mae_mm": 75.8,
+  "peak_err_mm": 141.8,
+  "wet": true
+ },
+ {
+  "seq": "ACCC",
+  "mae_mm": 80.9,
+  "peak_err_mm": 148.1,
+  "wet": true
+ },
+ {
+  "seq": "CACA",
+  "mae_mm": 84.9,
+  "peak_err_mm": 153.0,
+  "wet": true
+ },
+ {
+  "seq": "BCCC",
+  "mae_mm": 95.1,
+  "peak_err_mm": 163.6,
+  "wet": true
+ },
+ {
+  "seq": "CACC",
+  "mae_mm": 95.7,
+  "peak_err_mm": 171.6,
+  "wet": true
+ },
+ {
+  "seq": "CCAA",
+  "mae_mm": 98.9,
+  "peak_err_mm": 175.7,
+  "wet": true
+ },
+ {
+  "seq": "CCAC",
+  "mae_mm": 110.1,
+  "peak_err_mm": 191.4,
+  "wet": true
+ },
+ {
+  "seq": "CCCA",
+  "mae_mm": 121.9,
+  "peak_err_mm": 207.7,
+  "wet": true
+ },
+ {
+  "seq": "CCCC",
+  "mae_mm": 137.4,
+  "peak_err_mm": 228.4,
+  "wet": true
+ },
+ {
+  "seq": "BABB",
+  "mae_mm": 3.9,
+  "peak_err_mm": -24.8,
+  "wet": false
+ },
+ {
+  "seq": "BBAA",
+  "mae_mm": 4.0,
+  "peak_err_mm": -26.7,
+  "wet": false
+ },
+ {
+  "seq": "BBAB",
+  "mae_mm": 4.0,
+  "peak_err_mm": -26.7,
+  "wet": false
+ },
+ {
+  "seq": "BBBA",
+  "mae_mm": 4.0,
+  "peak_err_mm": -26.7,
+  "wet": false
+ },
+ {
+  "seq": "BBBB",
+  "mae_mm": 4.0,
+  "peak_err_mm": -26.7,
+  "wet": false
+ },
+ {
+  "seq": "BCBB",
+  "mae_mm": 4.0,
+  "peak_err_mm": -26.7,
+  "wet": false
+ },
+ {
+  "seq": "CBBB",
+  "mae_mm": 4.0,
+  "peak_err_mm": -26.7,
+  "wet": false
+ }
+]
