@@ -40,12 +40,13 @@ def _keys():
 _clients = {}
 
 
-def client(name=None):
+def client(name=None, timeout_s=240):
     keys = _keys()
     name = name or next(iter(keys))
-    if name not in _clients:
-        _clients[name] = genai.Client(api_key=keys[name], http_options=types.HttpOptions(timeout=600_000))
-    return _clients[name]
+    k = (name, timeout_s)
+    if k not in _clients:
+        _clients[k] = genai.Client(api_key=keys[name], http_options=types.HttpOptions(timeout=timeout_s * 1000))
+    return _clients[k]
 
 
 class _Slot:
@@ -116,7 +117,7 @@ def _cache_write(key, text, usage):
     tmp.replace(CACHE_DIR / f"{key}.json")
 
 
-def ask(parts, thinking="high", max_output_tokens=65536, media_resolution=None, attempts=4):
+def ask(parts, thinking="high", max_output_tokens=65536, media_resolution=None, attempts=4, timeout_s=240):
     """One call with a concurrency slot, retries and a log line. Returns (text, usage dict, seconds)."""
     config = types.GenerateContentConfig(
         max_output_tokens=max_output_tokens,
@@ -142,7 +143,7 @@ def ask(parts, thinking="high", max_output_tokens=65536, media_resolution=None, 
         with _Slot() as slot:
             t0 = time.time()
             try:
-                resp = client(slot.key).models.generate_content(model=MODEL, contents=parts, config=config)
+                resp = client(slot.key, timeout_s).models.generate_content(model=MODEL, contents=parts, config=config)
                 usage = resp.usage_metadata.model_dump() if resp.usage_metadata else {}
                 _log({"t": round(t0), "key": slot.key, "ok": True, "attempt": attempt, "wait_s": round(t0 - start, 1),
                       "call_s": round(time.time() - t0, 1), "out_tokens": usage.get("candidates_token_count")})
@@ -212,7 +213,7 @@ def critique(sheet_path, knobs, current, history):
     text = (CRITIQUE_BRIEF.replace("KNOBS_PLACEHOLDER", json.dumps(knobs))
             .replace("CURRENT_PLACEHOLDER", json.dumps(current))
             .replace("HISTORY_PLACEHOLDER", json.dumps(history) if history else "none"))
-    reply, usage, secs = ask([_file_part(sheet_path), types.Part.from_text(text=text)], thinking="high", max_output_tokens=16384, media_resolution="high")
+    reply, usage, secs = ask([_file_part(sheet_path), types.Part.from_text(text=text)], thinking="high", max_output_tokens=65536, media_resolution="high", timeout_s=600)
     m = re.search(r"\{.*\}", reply, re.S)
     return {"result": json.loads(m.group(0)) if m else {"raw": reply}, "usage": usage, "seconds": secs}
 
@@ -239,7 +240,7 @@ def generate_scene(plan_pdf, frames, site, out_path):
     for cam, path in frames.items():
         parts += [types.Part.from_text(text=f"Real frame from {cam}, site dry:"), _file_part(path)]
     parts.append(types.Part.from_text(text=SCENE_BRIEF.replace("CONTRACT_PLACEHOLDER", contract) + "\n\nsite = " + json.dumps(site)))
-    text, usage, secs = ask(parts)
+    text, usage, secs = ask(parts, timeout_s=900)
     code = extract_code(text)
     out_path = pathlib.Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -263,7 +264,7 @@ Reply with JSON only:
 
 def judge(sheet_path):
     reply, usage, secs = ask([_file_part(sheet_path), types.Part.from_text(text=JUDGE_BRIEF)],
-                             thinking="high", max_output_tokens=16384, media_resolution="high")
+                             thinking="medium", max_output_tokens=65536, media_resolution="high")
     m = re.search(r"\{.*\}", reply, re.S)
     return {"result": json.loads(m.group(0)) if m else {"raw": reply}, "usage": usage, "seconds": secs}
 
@@ -285,6 +286,6 @@ Reply with JSON only:
 def scene_fix(sheet_path, description):
     text = SCENE_FIX_BRIEF + "\n\nCurrent scene description:\n" + json.dumps(description)[:60000]
     reply, usage, secs = ask([_file_part(sheet_path), types.Part.from_text(text=text)],
-                             thinking="high", max_output_tokens=16384, media_resolution="high")
+                             thinking="high", max_output_tokens=65536, media_resolution="high")
     m = re.search(r"\{.*\}", reply, re.S)
     return {"result": json.loads(m.group(0)) if m else {"raw": reply}, "usage": usage, "seconds": secs}

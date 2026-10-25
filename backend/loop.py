@@ -1,4 +1,11 @@
-"""The calibration loop: simulate, render, compare with real frames, critique, fix, repeat."""
+"""The calibration loop.
+
+Round 0 aligns the scene with the real dry frame (structural fixes, as small patches).
+Round 1 lets Argon judge which way water enters the basement (sewer, door, both).
+Later rounds are a visual search: three candidate parameter sets are simulated and rendered,
+Argon judges which render matches the real frames, and the search narrows around the winner.
+Argon never sees simulation numbers or gauges; it only sees renders beside real frames.
+"""
 import argparse
 import copy
 import hashlib
@@ -11,8 +18,11 @@ from backend.config import RUNS, SPLIT
 from backend.render import Renderer
 
 ROOT = Path(__file__).resolve().parent.parent
-KNOBS = {"basement_path": ["sewer", "door", "both"], "weir_cd": [1.1, 2.1], "orifice_cd": [0.2, 0.8]}
-CAMS = ["cam5"]
+KNOBS_FILE = ROOT / "site" / "knobs.json"
+DEFAULT_KNOBS = {"basement_path": ["sewer", "door", "both"], "weir_cd": [1.1, 2.1], "orifice_cd": [0.2, 0.8]}
+KNOBS = json.loads(KNOBS_FILE.read_text()) if KNOBS_FILE.exists() else DEFAULT_KNOBS
+CAM = "cam5"
+LABELS = "ABCDEF"
 
 
 def key_times(event, n=5):
@@ -48,81 +58,152 @@ def clamp(knobs):
     return out
 
 
+def numeric_knobs():
+    return [k for k, v in KNOBS.items() if not isinstance(v[0], str)]
+
+
 def file_sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
+
+
+def merge(a, b):
+    for k, v in b.items():
+        if isinstance(v, dict) and isinstance(a.get(k), dict):
+            merge(a[k], v)
+        else:
+            a[k] = v
+    return a
 
 
 class Loop:
     def __init__(self, event, scene, name, site=None, params=None):
         self.event = event
         self.scene = Path(scene)
+        self.scene_url = "/" + str(self.scene.relative_to(ROOT / "web"))
         self.dir = RUNS / "loop" / name
         self.dir.mkdir(parents=True, exist_ok=True)
         self.site = site or json.loads((ROOT / "site" / "site.json").read_text())
-        self.params = params or json.loads((ROOT / "site" / "params.json").read_text())
-        for k, v in {"weir_cd": 1.6, "orifice_cd": 0.6}.items():
-            if self.params.get(k) is None:
-                self.params[k] = v
+        self.params = clamp(params or json.loads((ROOT / "site" / "params.json").read_text()))
+        for k in numeric_knobs():
+            if k not in self.params:
+                lo, hi = KNOBS[k]
+                self.params[k] = (lo + hi) / 2
+        self.params.setdefault("basement_path", "sewer")
+        self.patch = {}
+        self.step = 0.4
         self.history = []
         self.renderer = Renderer()
         self.renderer.site = self.site
         self.times = key_times(event)
+        self.labels = [f"{CAM} t={t}s" for t in self.times]
 
-    def real_frames(self, out):
+    def real_frames(self, out, times=None):
         from backend import frames
-        paths = []
-        for cam in CAMS:
-            paths += frames.real_frames(self.event, cam, self.times, out / "real")
-        return paths
+        return frames.real_frames(self.event, CAM, times or self.times, out / "real")
 
-    def round(self, n):
+    def structural_round(self, n, max_iter=2):
         out = self.dir / f"round_{n:02d}"
         out.mkdir(parents=True, exist_ok=True)
         t0 = time.time()
-        depths = sim.run(self.site, self.params, self.event, f"loop_{self.dir.name}_r{n:02d}")
-        t_sim = time.time()
-        scene_url = "/" + str(self.scene.relative_to(ROOT / "web"))
-        renders = []
-        for cam in CAMS:
-            renders += self.renderer.render(scene_url, depths, cam, self.times, out / "render")
-        t_render = time.time()
-        real = self.real_frames(out)
-        labels = [f"{cam} t={t}s" for cam in CAMS for t in self.times]
-        sheet = contact.contact_sheet(real, renders, labels, out / "contact.png")
-        crit = argon.critique(sheet, KNOBS, self.params, self.history)
-        t_crit = time.time()
-        res = crit["result"]
-        changes = clamp(res.get("knob_changes") or {})
-        record = {
-            "round": n, "event": self.event, "scene": str(self.scene), "scene_sha": file_sha(self.scene),
-            "params": copy.deepcopy(self.params), "depths": str(depths), "contact": str(sheet),
-            "critique": res, "applied_knobs": changes, "usage": crit["usage"],
-            "seconds": {"sim": round(t_sim - t0, 1), "render": round(t_render - t_sim, 1), "critique": round(t_crit - t_render, 1)},
-        }
-        self.params.update(changes)
-        patch = (res.get("scene_patch") or "").strip()
-        if patch:
-            new_scene = self.scene.with_name(f"{self.dir.name}_r{n + 1:02d}.js")
-            p = argon.patch_scene(self.scene.read_text(), patch, sheet, new_scene)
-            record["scene_patch"] = {"instruction": patch, "new_scene": str(new_scene), "seconds": p["seconds"]}
-            self.scene = new_scene
-        record["seconds"]["total"] = round(time.time() - t0, 1)
-        self.history.append({"round": n, "knobs": changes, "scene_patch": patch, "evidence": res.get("evidence")})
+        dry = {"t": [0], "depth_m": {}}
+        real = self.real_frames(out, [0])
+        log = []
+        sheet = None
+        for i in range(max_iter + 1):
+            self.renderer.patch = self.patch
+            render = self.renderer.render(self.scene_url, dry, CAM, [0], out / f"render_{i}")[0]
+            sheet = contact.contact_sheet(real, [render], [f"{CAM} dry, pass {i}"], out / f"contact_{i}.png")
+            if i == max_iter:
+                break
+            fix = argon.scene_fix(sheet, self.renderer.describe(self.scene_url))
+            res = fix["result"]
+            log.append({"pass": i, "differences": res.get("differences"), "patch": res.get("patch"),
+                        "confidence": res.get("confidence"), "seconds": fix["seconds"], "usage": fix["usage"]})
+            if not res.get("patch"):
+                break
+            self.patch = merge(self.patch, res["patch"])
+        (self.dir / "patch.json").write_text(json.dumps(self.patch, indent=1))
+        evidence = "; ".join(d for l in log for d in (l.get("differences") or []))
+        record = {"round": n, "kind": "structure", "event": self.event, "scene": str(self.scene),
+                  "scene_sha": file_sha(self.scene), "patch": self.patch, "params": copy.deepcopy(self.params),
+                  "contact": str(sheet),
+                  "critique": {"rows": [{"label": "dry frame", "verdict": "patched" if self.patch else "same", "evidence": evidence}],
+                               "passes": log},
+                  "applied_knobs": {}, "scene_changed": bool(self.patch), "seconds": {"total": round(time.time() - t0, 1)}}
         (out / "round.json").write_text(json.dumps(record, indent=1, default=str))
+        self.history.append({"round": n, "scene_patch": bool(self.patch)})
         return record
 
-    def run(self, rounds=4):
+    def path_candidates(self):
+        return {L: dict(self.params, basement_path=p) for L, p in zip(LABELS, KNOBS["basement_path"])}
+
+    def numeric_candidates(self):
+        cands = {"A": dict(self.params)}
+        lo_set, hi_set = dict(self.params), dict(self.params)
+        for k in numeric_knobs():
+            lo, hi = KNOBS[k]
+            v = self.params[k]
+            lo_set[k] = max(lo, v - self.step * (v - lo))
+            hi_set[k] = min(hi, v + self.step * (hi - v))
+        cands["B"], cands["C"] = lo_set, hi_set
+        return cands
+
+    def judged_round(self, n, candidates, kind):
+        out = self.dir / f"round_{n:02d}"
+        out.mkdir(parents=True, exist_ok=True)
+        t0 = time.time()
+        depths, renders = {}, {}
+        self.renderer.patch = self.patch
+        for L, p in candidates.items():
+            depths[L] = sim.run(self.site, p, self.event, f"loop_{self.dir.name}_r{n:02d}_{L}")
+            renders[L] = self.renderer.render(self.scene_url, depths[L], CAM, self.times, out / f"render_{L}")
+        t_sim = time.time()
+        real = self.real_frames(out)
+        sheet = contact.judge_sheet(real, renders, self.labels, out / "contact.png")
+        verdict = argon.judge(sheet)
+        res = verdict["result"]
+        winner = res.get("winner") if res.get("winner") in candidates else "A"
+        chosen = candidates[winner]
+        changed = {k: v for k, v in chosen.items() if self.params.get(k) != v}
+        if kind == "numeric" and winner == "A":
+            self.step *= 0.5
+        self.params = dict(chosen)
+        rows = [{"label": r.get("label"), "verdict": r.get("best"), "evidence": r.get("evidence")} for r in (res.get("rows") or [])]
+        record = {"round": n, "kind": kind, "event": self.event, "scene": str(self.scene), "scene_sha": file_sha(self.scene),
+                  "patch": self.patch, "params": copy.deepcopy(self.params), "candidates": candidates, "winner": winner,
+                  "depths": str(depths[winner]), "contact": str(sheet),
+                  "critique": {"rows": rows, "remaining_error": res.get("remaining_error"), "direction": res.get("direction"),
+                               "confidence": res.get("confidence"), "raw": res.get("raw")},
+                  "applied_knobs": changed, "scene_changed": False, "usage": verdict["usage"],
+                  "seconds": {"sim_render": round(t_sim - t0, 1), "judge": round(verdict["seconds"], 1),
+                              "total": round(time.time() - t0, 1)}}
+        (out / "round.json").write_text(json.dumps(record, indent=1, default=str))
+        self.history.append({"round": n, "winner": winner, "knobs": changed, "direction": res.get("direction")})
+        return record
+
+    def run(self, rounds=3, structure=True):
         records = []
         try:
-            for n in range(rounds):
-                rec = self.round(n)
+            n = 0
+            if structure:
+                records.append(self.structural_round(n))
+                n += 1
+            records.append(self.judged_round(n, self.path_candidates(), "path"))
+            n += 1
+            same = 0
+            for _ in range(rounds):
+                rec = self.judged_round(n, self.numeric_candidates(), "numeric")
                 records.append(rec)
-                res = rec["critique"]
-                if n > 0 and not rec["applied_knobs"] and not rec.get("scene_patch"):
+                n += 1
+                if rec["critique"].get("direction") == "ok":
+                    break
+                same = same + 1 if rec["winner"] == "A" else 0
+                if same >= 2:
                     break
         finally:
             self.renderer.close()
-        frozen = {"scene": str(self.scene), "scene_sha": file_sha(self.scene), "params": self.params, "site": self.site}
+        frozen = {"scene": str(self.scene), "scene_sha": file_sha(self.scene), "patch": self.patch,
+                  "params": self.params, "site": self.site, "event": self.event}
         frozen["sha"] = hashlib.sha256(json.dumps(frozen, sort_keys=True).encode()).hexdigest()[:12]
         (self.dir / "frozen.json").write_text(json.dumps(frozen, indent=1))
         return records, frozen
@@ -133,11 +214,12 @@ def main():
     ap.add_argument("--event", type=int, default=SPLIT["calibrate"])
     ap.add_argument("--scene", default="web/scene/r0_blind.js")
     ap.add_argument("--name", default="calib")
-    ap.add_argument("--rounds", type=int, default=4)
+    ap.add_argument("--rounds", type=int, default=3, help="numeric rounds after the path round")
+    ap.add_argument("--no-structure", action="store_true")
     a = ap.parse_args()
-    records, frozen = Loop(a.event, ROOT / a.scene, a.name).run(a.rounds)
+    records, frozen = Loop(a.event, ROOT / a.scene, a.name).run(a.rounds, structure=not a.no_structure)
     for r in records:
-        print(r["round"], r["applied_knobs"], bool(r.get("scene_patch")), r["seconds"])
+        print(r["round"], r["kind"], r.get("winner"), r["applied_knobs"], r.get("scene_changed"), r["seconds"])
     print("frozen", frozen["sha"], frozen["params"])
 
 

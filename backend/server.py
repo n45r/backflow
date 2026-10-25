@@ -134,3 +134,13 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Gauge data must not be reachable by anything the browser loads before the reveal.
+@app.middleware("http")
+async def block_reveal_files(request, call_next):
+    path = request.url.path
+    if path.startswith("/runs/reveal") or path.startswith("/evaluation"):
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse("evaluator only", status_code=403)
+    return await call_next(request)
