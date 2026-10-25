@@ -56,7 +56,7 @@ def main(voice):
         app_clip(OUT / "app_a.mp4", 17.0, 10.5, 3.5, OUT / "L2.mp4"),
         app_clip(OUT / "app_a.mp4", 27.5, 9.5, 6.3, OUT / "L3.mp4"),
         app_clip(OUT / "app_a.mp4", 37.0, 7.1, 7.1, OUT / "L4.mp4"),
-        app_clip(OUT / "app_b.mp4", 6.6, 10.6, 6.0, OUT / "T1.mp4"),
+        app_clip(OUT / "app_b.mp4", 7.9, 11.0, 6.0, OUT / "T1.mp4"),
         OUT / "reveal_voiced.mp4",
         still(end_card(OUT / "v8.png"), round(END - CUES["end"], 2), OUT / "v8.mp4"),
     ]
