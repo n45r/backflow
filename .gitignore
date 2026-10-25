@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+.env
+data/raw/
+data/video/
+data/cache/
+runs/
+frozen/
+evaluation/
+*.avi
+*.mp4
+*.tar
+*.zip
+.DS_Store
+node_modules/
