@@ -85,7 +85,7 @@ Notes on the live round:
 | 2:16 | Error table, basement rows. | "The real peak was 27 millimetres. The untuned model was 65 too deep. After one flood video: 5 millimetres off. Average error fell from 34 to 6." |
 | 2:26 | Researchers' row. | "The researchers who built this site published 40 calibrations using all their water sensors. Run in our model, the median average error is 5. Same accuracy, and we used video only." |
 | 2:34 | Plain optimiser row, with its flat dry line. | "We also fitted a plain optimiser to the timeline Argon read. Its average error is 4, which looks great. But it predicts a dry basement. The real one flooded. Mean error alone hides that." |
-| 2:41 | The first-water row stays on screen. | "One thing got worse. The first water comes 50 seconds late. Before, it was 20 seconds early." |
+| 2:41 | The first-water row stays on screen. | "And on all 23 other floods, it now calls flood or no flood correctly 21 times, up from 16. One thing got worse: the first water comes 50 seconds late." |
 
 ### Segment 5. Why it matters (2:45 to 3:00). LIVE, presenter only
 
