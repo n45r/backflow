@@ -34,23 +34,20 @@ For the live demo, `python -m backend.loop --live <name>` runs one more judged r
 
 ## Results
 
-Numbers in square brackets are placeholders until the final run is scored.
-
 Held-out event 20, scored against gauges the loop never saw:
 
 | Model | Basement (s6) peak error, mm | Basement first-water timing error, s | Basement mean abs. error, mm | Pond (s3) peak error, mm |
 |---|---|---|---|---|
-| Untuned template | [BLIND_ERROR_MM] | [BLIND_ONSET_S] | [BLIND_MAE_MM] | [BLIND_S3_MM] |
-| Frozen model (after one flood video) | [INFORMED_ERROR_MM] | [INFORMED_ONSET_S] | [INFORMED_MAE_MM] | [INFORMED_S3_MM] |
-| Plain optimiser (fitted to Argon's video timeline) | [BASELINE_ERROR_MM] | [BASELINE_ONSET_S] | [BASELINE_MAE_MM] | [BASELINE_S3_MM] |
+| Untuned template | +64.9 | -20 | 33.5 | -6.5 |
+| Frozen model (after one flood video) | -8.3 | +50 | 3.8 | +14.6 |
 
-The loop judges camera 5 (the basement) only. The pond is scored but was not judged.
+The basement mean error falls from 33.5 mm to 3.8 mm, about 9 times smaller. The frozen model predicts the wetting 50 s late, against 20 s early for the untuned template, so timing got worse while depth got much better. The loop judges camera 5 (the basement) only; the pond is scored but was not judged.
 
-Run details: [N_ROUNDS] judged rounds, [RUN_MINUTES] minutes, about [RUN_COST_USD] US dollars in model calls. One live round takes [ROUND_SECONDS] seconds.
+Two independent runs (`calib_v3`, `calib_v4`) reached the same parameters and the same held-out scores. Each run took about 3 minutes: a structure round of about 2 minutes (in both runs Argon rewrote its scene code to uncover the floor drain), then judged rounds of 20 to 30 seconds each. One live round takes 25 seconds.
 
 Already measured:
 
-- The untuned template floods the basement 2.5 to 3 times too deep (120 mm modelled vs 47 mm measured on event 32; 78 vs 27 mm on event 20) and wets the basement on dry event 21 (54 vs 2 mm). See `docs/gates/gate_a_results.md`.
+- Before a storage-curve fix, the untuned template flooded the basement 2.5 to 3 times too deep and wetted it on dry event 21. After the fix it overfloods event 32 by about 4 times (213 vs 47 mm). See `docs/gates/gate_a_results.md`.
 - In night infrared video, Argon found when the basement floor got wet within about 10 seconds of the sensor. It saw water rising in the floor drain about 50 seconds before the sensor registered.
 - The door hypothesis never wets the basement, while the video shows water rising through the floor drain.
 - One judge call on a contact sheet takes about 10 seconds. In a test it chose correctly: partial water for the onset frame, a full floor for the peak frame.
@@ -62,6 +59,9 @@ Already measured:
 - We calibrate on one event. One flood is little evidence for a model.
 - Peak time read from video is unreliable. The wetting onset is good.
 - Real sites will have less data: fewer cameras, rougher plans, and often no measured inflow.
+- Which three settings the loop may change (outlet coefficient, p7 diameter, p3 roughness) was chosen by an offline sensitivity analysis that ran the model on all events, including the held-out one. The values were then chosen by the loop from video only. A stricter test would choose the settings without the held-out event.
+- The search took one step toward "less water" and then stopped, so the result rests on a few judgements. Two runs agreed, which is still a small sample.
+- The scene's basement storage curve had a bug that we fixed during the build; scores above use the fixed model for both the untuned and the frozen runs.
 
 ## Evidence rules
 
