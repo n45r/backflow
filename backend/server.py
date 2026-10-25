@@ -85,6 +85,7 @@ def loop_summary(name: str):
             "scene_url": _url(rec.get("scene")),
             "depths_url": _url(rec.get("depths")),
             "contact_url": _url(rec.get("contact")),
+            "judge_video_url": _url(rj.parent / "judge.mp4") if (rj.parent / "judge.mp4").exists() else None,
             "params": rec.get("params") or {},
             "applied_knobs": rec.get("applied_knobs") or {},
             "rows": crit.get("rows") or [],

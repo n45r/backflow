@@ -246,12 +246,15 @@ class Loop:
         return records, frozen
 
 
-def live_round(name, event=None):
+def live_round(name, event=None, video=True):
     """One more judged round from the frozen state of an earlier run, for the live demo segment."""
     d = RUNS / "loop" / name
     frozen = json.loads((d / "frozen.json").read_text())
     lp = Loop(event or frozen["event"], ROOT / frozen["scene"], name, site=frozen.get("site"), params=frozen["params"])
     lp.patch = frozen.get("patch") or {}
+    lp.video = video
+    from backend import videojudge
+    videojudge.STEP_S = 10
     n = len(list(d.glob("round_*/round.json")))
     try:
         rec = lp.judged_round(n, lp.numeric_candidates(), "numeric")
@@ -273,7 +276,7 @@ def main():
     ap.add_argument("--video", action="store_true", help="Argon judges a side-by-side video instead of still frames")
     a = ap.parse_args()
     if a.live:
-        rec = live_round(a.live)
+        rec = live_round(a.live, video=a.video or True)
         print("live round", rec["round"], rec["winner"], rec["applied_knobs"], rec["seconds"])
         return
     lp = Loop(a.event, ROOT / a.scene, a.name)

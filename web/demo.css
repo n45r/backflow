@@ -147,3 +147,5 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .cmp-head { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; margin-bottom: 2px; }
 .cmp b { display: inline-block; min-width: 72px; }
 .cmp .dim { opacity: 0.6; }
+
+#overlayVid { max-width: 92vw; max-height: 86vh; border-radius: 8px; }

@@ -290,6 +290,7 @@ function drawCritique() {
   $('patch').textContent = r.scene_patch || 'None';
   $('evidence').textContent = r.remaining_error || r.evidence || '';
   $('contactBtn').hidden = !r.contact_url;
+  $('watchBtn').hidden = !r.judge_video_url;
 }
 
 function jumpToRow(row) {
@@ -573,10 +574,19 @@ function wire() {
   $('revealBtn').onclick = doReveal;
   $('contactBtn').onclick = () => {
     const r = state.data.rounds[state.roundIdx];
+    $('overlayVid').hidden = true; $('overlayVid').pause();
+    $('overlayImg').hidden = false;
     $('overlayImg').src = r.contact_url;
     $('overlay').hidden = false;
   };
-  $('overlay').onclick = () => { $('overlay').hidden = true; };
+  $('watchBtn').onclick = () => {
+    const r = state.data.rounds[state.roundIdx];
+    const v = $('overlayVid');
+    $('overlayImg').hidden = true;
+    v.hidden = false; v.src = r.judge_video_url; v.playbackRate = 4; v.play();
+    $('overlay').hidden = false;
+  };
+  $('overlay').onclick = () => { $('overlay').hidden = true; $('overlayVid').pause(); };
   video.addEventListener('error', () => { $('videoEmpty').hidden = false; $('videoEmpty').textContent = 'Clip could not be played'; });
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
